@@ -1,0 +1,20 @@
+# Eye-Blink to Morse Code System Requirements
+# ============================================
+
+# Core dependencies
+opencv-python>=4.8.0
+numpy>=1.24.0
+mediapipe>=0.10.0
+streamlit>=1.30.0
+
+# Deep learning
+ultralytics>=8.0.0
+torch>=2.0.0
+transformers>=4.36.0
+
+# Optional: GPU support (uncomment if using CUDA)
+# torch>=2.0.0+cu118
+
+# Download and progress utilities used by Hugging Face model loading
+tqdm>=4.65.0
+requests>=2.31.0
