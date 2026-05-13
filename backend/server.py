@@ -102,16 +102,24 @@ async def reset_camera_api():
 @app.get("/video_feed")
 def video_feed():
     """Endpoint untuk stream gambar ke tag <img> di React."""
+    import time
+
     def generate_frames():
+        # Exit cleanly once the camera is stopped so the generator doesn't spin forever.
+        idle_ticks = 0
         while True:
             if latest_frame is not None:
+                idle_ticks = 0
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + latest_frame + b'\r\n')
             else:
-                # Jika kamera mati, kirim frame kosong atau tunggu
-                import time
+                if not is_camera_running:
+                    idle_ticks += 1
+                    # ~1s grace period for camera to actually start, then end the stream.
+                    if idle_ticks > 10:
+                        return
                 time.sleep(0.1)
-    
+
     return StreamingResponse(generate_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 @app.websocket("/ws/data")
@@ -134,8 +142,18 @@ def clear_text():
 
 @app.post("/api/update_config")
 async def update_config(data: dict):
-    system.update_config(alpha=data.get("alpha", 0.4))
-    return {"status": "updated"}
+    # Forward every recognised SystemConfig field. Unknown keys are silently ignored
+    # by EyeBlinkMorseSystem.update_config via its hasattr check.
+    allowed = {
+        "alpha", "blink_threshold",
+        "letter_gap_seconds", "word_gap_seconds", "sentence_gap_seconds",
+        "ear_min", "ear_max",
+        "smoothing_window", "ema_alpha",
+        "use_gpu",
+    }
+    payload = {k: v for k, v in data.items() if k in allowed}
+    system.update_config(**payload)
+    return {"status": "updated", "applied": payload}
 
 @app.post("/api/toggle_nlp")
 async def toggle_nlp():

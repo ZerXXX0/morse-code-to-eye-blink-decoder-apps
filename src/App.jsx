@@ -1,23 +1,35 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+
+const API_BASE = 'http://localhost:8000';
 
 function App() {
   // --- STATE MANAGEMENT ---
   const [alpha, setAlpha] = useState(0.4);
+  const [blinkThreshold, setBlinkThreshold] = useState(0.5);
+  const [letterGap, setLetterGap] = useState(1.5);
+  const [wordGap, setWordGap] = useState(3.0);
+  const [sentenceGap, setSentenceGap] = useState(5.0);
+  const [earMin, setEarMin] = useState(0.15);
+  const [earMax, setEarMax] = useState(0.35);
   const [nlpEnabled, setNlpEnabled] = useState(false);
-  
+
   const [eyeState, setEyeState] = useState("UNKNOWN");
   const [confidence, setConfidence] = useState(0.0);
   const [fps, setFps] = useState(0.0);
   const [currentMorse, setCurrentMorse] = useState("");
-  
+
   const [decodedText, setDecodedText] = useState("");
   const [nlpText, setNlpText] = useState("");
   const [calStatus, setCalStatus] = useState("Connecting to Engine...");
 
+  // Debounce timers for config sliders (one per field).
+  const debounceTimers = useRef({});
+
   // --- INTEGRASI WEBSOCKET (REAL-TIME DATA) ---
   useEffect(() => {
     // Membuka koneksi WebSocket ke FastAPI backend
-    const ws = new WebSocket('ws://localhost:8000/ws/data');
+    const wsUrl = API_BASE.replace(/^http/, 'ws') + '/ws/data';
+    const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
       console.log('Terhubung ke peladen AI!');
@@ -71,28 +83,40 @@ function App() {
 
   // --- INTEGRASI REST API (KONTROL TOMBOL & INPUT) ---
 
-  // 1. Update Alpha (Dikirim saat slider digeser)
-  const handleAlphaChange = async (val) => {
-    setAlpha(val);
-    try {
-      await fetch('http://localhost:8000/api/update_config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ alpha: parseFloat(val) })
-      });
-    } catch (e) { 
-      console.error("Gagal update Alpha", e); 
-    }
+  // Generic debounced config-push for slider inputs.
+  const pushConfig = (key, value, delay = 200) => {
+    if (debounceTimers.current[key]) clearTimeout(debounceTimers.current[key]);
+    debounceTimers.current[key] = setTimeout(async () => {
+      try {
+        await fetch(`${API_BASE}/api/update_config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [key]: parseFloat(value) })
+        });
+      } catch (e) {
+        console.error(`Gagal update ${key}`, e);
+      }
+    }, delay);
   };
 
-  // 2. Toggle NLP (Dikirim saat checkbox diklik)
+  const handleSliderChange = (key, setter) => (e) => {
+    const val = parseFloat(e.target.value);
+    setter(val);
+    pushConfig(key, val);
+  };
+
+  // Toggle NLP — trust server response so UI stays in sync.
   const handleNlpToggle = async () => {
-    const newVal = !nlpEnabled;
-    setNlpEnabled(newVal);
     try {
-      await fetch('http://localhost:8000/api/toggle_nlp', { method: 'POST' });
-    } catch (e) { 
-      console.error("Gagal toggle NLP", e); 
+      const res = await fetch(`${API_BASE}/api/toggle_nlp`, { method: 'POST' });
+      const data = await res.json();
+      if (typeof data.enabled === 'boolean') {
+        setNlpEnabled(data.enabled);
+      } else {
+        setNlpEnabled((prev) => !prev);
+      }
+    } catch (e) {
+      console.error("Gagal toggle NLP", e);
     }
   };
 
@@ -100,7 +124,7 @@ function App() {
   const handleStartCalibration = async () => {
     setCalStatus("⏳ Starting Calibration...");
     try {
-      await fetch('http://localhost:8000/api/start_calibration', { method: 'POST' });
+      await fetch(`${API_BASE}/api/start_calibration`, { method: 'POST' });
     } catch (e) { 
       console.error("Gagal memulai kalibrasi", e); 
     }
@@ -108,7 +132,7 @@ function App() {
 
   const handleNextStep = async () => {
     try {
-      await fetch('http://localhost:8000/api/next_step', { method: 'POST' });
+      await fetch(`${API_BASE}/api/next_step`, { method: 'POST' });
     } catch (e) { 
       console.error("Gagal lanjut ke tahap kalibrasi berikutnya", e); 
     }
@@ -118,7 +142,7 @@ function App() {
   const handleResetCalibration = async () => {
     setCalStatus("🔄 Resetting calibration...");
     try {
-      await fetch('http://localhost:8000/api/reset_calibration', { method: 'POST' });
+      await fetch(`${API_BASE}/api/reset_calibration`, { method: 'POST' });
       setCalStatus("ℹ️ Calibration Reset to Default. Ready.");
     } catch (e) { 
       console.error("Gagal mereset kalibrasi", e); 
@@ -131,7 +155,7 @@ function App() {
     setDecodedText("");
     setNlpText("");
     try {
-      await fetch('http://localhost:8000/api/clear_text', { method: 'POST' });
+      await fetch(`${API_BASE}/api/clear_text`, { method: 'POST' });
     } catch (error) {
       console.error("Gagal mengirim perintah reset teks ke peladen:", error);
     }
@@ -140,21 +164,21 @@ function App() {
   // --- KONTROL KAMERA ---
   const handleCameraStart = async () => {
     try {
-      await fetch('http://localhost:8000/api/camera/start', { method: 'POST' });
+      await fetch(`${API_BASE}/api/camera/start`, { method: 'POST' });
       setCalStatus("📷 Camera starting...");
     } catch (e) { console.error("Gagal start kamera"); }
   };
 
   const handleCameraStop = async () => {
     try {
-      await fetch('http://localhost:8000/api/camera/stop', { method: 'POST' });
+      await fetch(`${API_BASE}/api/camera/stop`, { method: 'POST' });
       setCalStatus("📷 Camera stopped.");
     } catch (e) { console.error("Gagal stop kamera"); }
   };
 
   const handleCameraReset = async () => {
     try {
-      await fetch('http://localhost:8000/api/camera/reset', { method: 'POST' });
+      await fetch(`${API_BASE}/api/camera/reset`, { method: 'POST' });
       setDecodedText("");
       setNlpText("");
       setCalStatus("🔄 System & Camera Reset.");
@@ -169,19 +193,74 @@ function App() {
       <div className="w-80 bg-white p-6 overflow-y-auto border-r border-slate-200 flex flex-col shadow-sm z-10">
         <h2 className="text-xl font-bold mb-6 text-slate-800">⚙️ Settings</h2>
         
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-slate-600 mb-2">Alpha (YOLO weight): {alpha}</label>
-          <input 
-            type="range" min="0" max="1" step="0.05" value={alpha} 
-            onChange={(e) => handleAlphaChange(e.target.value)}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-slate-600 mb-2">Alpha (YOLO weight): {alpha.toFixed(2)}</label>
+          <input
+            type="range" min="0" max="1" step="0.05" value={alpha}
+            onChange={handleSliderChange('alpha', setAlpha)}
             className="w-full accent-teal-600"
           />
         </div>
 
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-slate-600 mb-2">Blink Threshold: {blinkThreshold.toFixed(2)}</label>
+          <input
+            type="range" min="0.1" max="0.9" step="0.05" value={blinkThreshold}
+            onChange={handleSliderChange('blink_threshold', setBlinkThreshold)}
+            className="w-full accent-teal-600"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-slate-600 mb-2">Letter Gap: {letterGap.toFixed(2)}s</label>
+          <input
+            type="range" min="0.3" max="5" step="0.1" value={letterGap}
+            onChange={handleSliderChange('letter_gap_seconds', setLetterGap)}
+            className="w-full accent-teal-600"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-slate-600 mb-2">Word Gap: {wordGap.toFixed(2)}s</label>
+          <input
+            type="range" min="0.5" max="8" step="0.1" value={wordGap}
+            onChange={handleSliderChange('word_gap_seconds', setWordGap)}
+            className="w-full accent-teal-600"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-slate-600 mb-2">Sentence Gap: {sentenceGap.toFixed(2)}s</label>
+          <input
+            type="range" min="1" max="12" step="0.1" value={sentenceGap}
+            onChange={handleSliderChange('sentence_gap_seconds', setSentenceGap)}
+            className="w-full accent-teal-600"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-2">EAR Min: {earMin.toFixed(2)}</label>
+            <input
+              type="range" min="0.05" max="0.3" step="0.01" value={earMin}
+              onChange={handleSliderChange('ear_min', setEarMin)}
+              className="w-full accent-teal-600"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-2">EAR Max: {earMax.toFixed(2)}</label>
+            <input
+              type="range" min="0.2" max="0.5" step="0.01" value={earMax}
+              onChange={handleSliderChange('ear_max', setEarMax)}
+              className="w-full accent-teal-600"
+            />
+          </div>
+        </div>
+
         <div className="mb-6">
           <label className="flex items-center space-x-3 cursor-pointer">
-            <input 
-              type="checkbox" checked={nlpEnabled} 
+            <input
+              type="checkbox" checked={nlpEnabled}
               onChange={handleNlpToggle}
               className="w-4 h-4 accent-teal-600 rounded bg-slate-100 border-slate-300"
             />
@@ -253,7 +332,7 @@ function App() {
                 <div className="absolute inset-0 border-2 border-teal-500/30 rounded-xl m-4 pointer-events-none z-10"></div>
                 
                 <img 
-                  src="http://localhost:8000/video_feed" 
+                  src={`${API_BASE}/video_feed`} 
                   alt="Webcam Stream" 
                   className="w-full h-full object-cover"
                   onError={(e) => {

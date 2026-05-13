@@ -1345,15 +1345,21 @@ class NLPCorrectionManager:
     """
     
     def __init__(self):
-        """Initialize the NLP correction manager."""
+        """Initialize the NLP correction manager.
+
+        The IndoBERT corrector is loaded lazily on first enable to avoid
+        blocking server startup with a multi-minute HuggingFace download.
+        """
         self.enabled = False
         self.corrector: Optional[NLPCorrector] = None
         self.raw_text = ""
         self.corrected_text = ""
         self.corrected_sentences: List[str] = []
-        
-        # Initialize with IndoBERT corrector (Seq2Seq model from Hugging Face)
-        self.set_corrector(IndoBERTCorrector())
+
+    def _ensure_corrector_loaded(self):
+        """Load IndoBERT on first use."""
+        if self.corrector is None:
+            self.corrector = IndoBERTCorrector()
     
     def set_corrector(self, corrector: NLPCorrector):
         """
@@ -1373,8 +1379,11 @@ class NLPCorrectionManager:
         self.enabled = False
     
     def toggle(self) -> bool:
-        """Toggle NLP correction on/off."""
-        self.enabled = not self.enabled
+        """Toggle NLP correction on/off. Loads the IndoBERT model on first enable."""
+        new_state = not self.enabled
+        if new_state:
+            self._ensure_corrector_loaded()
+        self.enabled = new_state
         return self.enabled
 
     def reset(self):
@@ -1636,7 +1645,22 @@ class EyeBlinkMorseSystem:
         """Start calibration process."""
         self.calibration_manager.start_calibration(method, target_blinks)
         self.blink_detector.reset()
-    
+
+    def next_calibration_step(self):
+        """Advance calibration to the next phase regardless of sample count.
+
+        - If collecting dots, jump to collecting dashes.
+        - If collecting dashes, finalize calibration with whatever was collected.
+        - Otherwise no-op.
+        """
+        mgr = self.calibration_manager
+        if not mgr.is_calibrating:
+            return
+        if mgr.calibration_phase == CalibrationPhase.COLLECTING_DOTS:
+            mgr.calibration_phase = CalibrationPhase.COLLECTING_DASHES
+        elif mgr.calibration_phase == CalibrationPhase.COLLECTING_DASHES:
+            mgr._finalize_calibration()
+
     def reset_calibration(self):
         """Reset calibration."""
         self.calibration_manager.reset()
