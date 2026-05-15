@@ -331,16 +331,11 @@ function App() {
               <div className="w-full h-64 bg-slate-900 rounded-xl flex items-center justify-center mb-5 border border-slate-200 overflow-hidden relative shadow-inner">
                 <div className="absolute inset-0 border-2 border-teal-500/30 rounded-xl m-4 pointer-events-none z-10"></div>
                 
-                <img 
-                  src={`${API_BASE}/video_feed`} 
-                  alt="Webcam Stream" 
+                <img
+                  src={`${API_BASE}/video_feed`}
+                  alt="Webcam Stream"
                   className="w-full h-full object-cover"
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                    if (e.target.nextSibling) e.target.nextSibling.style.display = 'block';
-                  }}
                 />
-                <span className="text-slate-400 font-medium hidden">Gagal memuat video... (Cek Backend)</span>
               </div>
 
               <div className="grid grid-cols-3 gap-3">

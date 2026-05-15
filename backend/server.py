@@ -1,11 +1,19 @@
 import cv2
 import json
 import asyncio
+import os
+import sys
 import threading
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+
+# Resolve paths relative to this file so the server works regardless of CWD
+# (e.g. `python backend/server.py` from the project root).
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
 
 # Import sistem utama dari file implementation.py
 from implementation import EyeBlinkMorseSystem, SystemConfig
@@ -20,8 +28,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Inisialisasi sistem AI
-config = SystemConfig()
+# Inisialisasi sistem AI dengan path absolut agar tidak bergantung pada CWD.
+config = SystemConfig(
+    yolo_model_path=os.path.join(BACKEND_DIR, "runs", "classify", "nano_100", "weights", "best.pt"),
+)
+# MediaPipe face_landmarker.task is downloaded into CWD by default; make sure
+# implementation.py resolves it next to itself by chdir-ing into BACKEND_DIR
+# for the duration of process startup.
+os.chdir(BACKEND_DIR)
 system = EyeBlinkMorseSystem(config)
 
 # Variabel Global
@@ -101,24 +115,26 @@ async def reset_camera_api():
 
 @app.get("/video_feed")
 def video_feed():
-    """Endpoint untuk stream gambar ke tag <img> di React."""
+    """Endpoint untuk stream gambar ke tag <img> di React.
+
+    Stays open for the lifetime of the HTTP connection. Only yields when a
+    NEW frame is ready — otherwise the loop would re-send the same JPEG
+    thousands of times per second and freeze the browser tab.
+    """
     import time
 
     def generate_frames():
-        # Exit cleanly once the camera is stopped so the generator doesn't spin forever.
-        idle_ticks = 0
+        last_frame = None
         while True:
-            if latest_frame is not None:
-                idle_ticks = 0
+            frame = latest_frame  # atomic ref read (GIL)
+            if frame is not None and frame is not last_frame:
+                last_frame = frame
                 yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + latest_frame + b'\r\n')
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
             else:
-                if not is_camera_running:
-                    idle_ticks += 1
-                    # ~1s grace period for camera to actually start, then end the stream.
-                    if idle_ticks > 10:
-                        return
-                time.sleep(0.1)
+                # Poll ~50 Hz — fast enough to keep up with a 30 FPS source,
+                # slow enough to not pin a CPU core.
+                time.sleep(0.02)
 
     return StreamingResponse(generate_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
