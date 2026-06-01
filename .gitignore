@@ -12,6 +12,16 @@ dist
 dist-ssr
 *.local
 
+# Local SQLite database (per-user calibration store)
+backend/app.db
+backend/app.db-journal
+backend/app.db-shm
+backend/app.db-wal
+
+# Python cache
+__pycache__
+*.pyc
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

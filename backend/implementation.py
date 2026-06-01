@@ -819,13 +819,13 @@ class CalibrationManager:
     def __init__(self, config: SystemConfig):
         """
         Initialize the calibration manager.
-        
+
         Args:
             config: System configuration
         """
         self.config = config
         self.calibration = CalibrationData()
-        
+
         # Calibration state
         self.is_calibrating = False
         self.calibration_phase = CalibrationPhase.NOT_STARTED
@@ -834,6 +834,10 @@ class CalibrationManager:
         self.calibration_start_time = 0.0
         self.target_dots = 3  # Number of dots to collect
         self.target_dashes = 3  # Number of dashes to collect
+
+        # Optional hook fired after _finalize_calibration completes successfully
+        # so an external store (e.g. SQLite) can persist the result.
+        self.on_calibration_complete: Optional[Callable[[CalibrationData], None]] = None
     
     def start_calibration(self, method: CalibrationMethod = CalibrationMethod.FREE_BLINK,
                           target_blinks: int = 3):
@@ -898,19 +902,19 @@ class CalibrationManager:
         """Finalize calibration and compute thresholds."""
         self.is_calibrating = False
         self.calibration_phase = CalibrationPhase.COMPLETED
-        
+
         if len(self.dot_blinks) > 0 and len(self.dash_blinks) > 0:
             # Compute average durations for dots and dashes
             avg_dot = np.mean(self.dot_blinks)
             avg_dash = np.mean(self.dash_blinks)
-            
+
             # Store averages
             self.calibration.avg_dot_duration_ms = avg_dot
             self.calibration.avg_dash_duration_ms = avg_dash
-            
+
             # Threshold is the midpoint between average dot and dash
             self.calibration.avg_blink_duration_ms = (avg_dot + avg_dash) / 2.0
-            
+
             # Store the collected durations
             self.calibration.dot_durations = self.dot_blinks.copy()
             self.calibration.dash_durations = self.dash_blinks.copy()
@@ -918,6 +922,14 @@ class CalibrationManager:
         else:
             # Fallback to default
             self.calibration.avg_blink_duration_ms = self.config.default_blink_duration_ms
+
+        # Notify external persistence hook (e.g. SQLite save in server.py).
+        # Exceptions in the callback must never break calibration.
+        if self.on_calibration_complete is not None and self.calibration.is_calibrated:
+            try:
+                self.on_calibration_complete(self.calibration)
+            except Exception as e:
+                print(f"on_calibration_complete callback error: {e}")
     
     def reset(self):
         """Reset calibration."""
@@ -1664,6 +1676,24 @@ class EyeBlinkMorseSystem:
     def reset_calibration(self):
         """Reset calibration."""
         self.calibration_manager.reset()
+
+    def set_calibration_complete_callback(self, callback):
+        """Wire an external persistence hook into the calibration manager."""
+        self.calibration_manager.on_calibration_complete = callback
+
+    def apply_calibration(self, data: CalibrationData):
+        """Replace the active calibration with a pre-existing CalibrationData
+        (e.g. loaded from a per-user database row).
+
+        The blink detector keeps a direct reference to the calibration object,
+        so we must also re-point it at the new instance.
+        """
+        self.calibration_manager.calibration = data
+        self.calibration_manager.is_calibrating = False
+        self.calibration_manager.calibration_phase = CalibrationPhase.COMPLETED
+        self.calibration_manager.dot_blinks = list(data.dot_durations)
+        self.calibration_manager.dash_blinks = list(data.dash_durations)
+        self.blink_detector.calibration = data
     
     def clear_text(self):
         """Clear decoded text."""
