@@ -494,10 +494,9 @@ class YOLOEyeClassifier:
         self._load_model()
     
     def _load_model(self):
-        """Load the YOLO model."""
+        """Load the YOLO model and run a dummy warmup to pre-compile the inference graph."""
         try:
             self.model = YOLO(self.model_path)
-            # Set device
             if self.use_gpu:
                 import torch
                 if torch.cuda.is_available():
@@ -505,9 +504,20 @@ class YOLOEyeClassifier:
                 else:
                     print("GPU not available, falling back to CPU")
                     self.use_gpu = False
+            self._warmup()
         except Exception as e:
             print(f"Error loading YOLO model: {e}")
             self.model = None
+
+    def _warmup(self):
+        """Run one dummy inference so PyTorch JIT-compiles the graph before first real frame."""
+        if self.model is None:
+            return
+        try:
+            dummy = np.zeros((512, 512, 3), dtype=np.uint8)
+            self.model(dummy, verbose=False)
+        except Exception:
+            pass
     
     def classify(self, image: np.ndarray) -> YOLOResult:
         """
@@ -1357,16 +1367,13 @@ class NLPCorrectionManager:
     """
     
     def __init__(self):
-        """Initialize the NLP correction manager.
-
-        The IndoBERT corrector is loaded lazily on first enable to avoid
-        blocking server startup with a multi-minute HuggingFace download.
-        """
         self.enabled = False
         self.corrector: Optional[NLPCorrector] = None
         self.raw_text = ""
         self.corrected_text = ""
         self.corrected_sentences: List[str] = []
+        self.sentence_suggestions: List[List[str]] = []  # up to 3 per sentence
+        self._raw_parts: List[str] = []  # raw text of each completed sentence
 
     def _ensure_corrector_loaded(self):
         """Load IndoBERT on first use."""
@@ -1403,33 +1410,39 @@ class NLPCorrectionManager:
         self.raw_text = ""
         self.corrected_text = ""
         self.corrected_sentences = []
-    
-    def _correct_sentence(self, sentence: str) -> str:
-        """Apply correction to a single sentence-like block."""
+        self.sentence_suggestions = []
+        self._raw_parts = []
+
+    def _get_suggestions(self, sentence: str) -> List[str]:
+        """Return up to 3 NLP correction suggestions for a completed sentence.
+        Falls back to [raw_text] if the model is not ready yet."""
         compact = ' '.join(sentence.split())
         if not compact:
-            return ""
-        return self.corrector.correct(compact) if self.corrector else compact
+            return []
+        if self.corrector is None:
+            return [compact]
+        try:
+            suggestions = self.corrector.get_suggestions(compact)
+            return suggestions[:3] if suggestions else [compact]
+        except Exception as e:
+            print(f"NLP suggestion error: {e}")
+            return [compact]
+
+    def get_structured_sentences(self) -> List[Dict]:
+        """Return completed sentences paired with their NLP suggestions for the frontend."""
+        result = []
+        for i in range(len(self._raw_parts)):
+            raw = self._raw_parts[i]
+            suggs = self.sentence_suggestions[i] if i < len(self.sentence_suggestions) else [raw]
+            result.append({"raw": raw, "suggestions": suggs})
+        return result
 
     def process(self, text: str, sentence_finished: bool = False) -> str:
-        """
-        Process text with optional NLP correction.
-        Correction is applied only to completed sentences (split by double newlines).
-        
-        Args:
-            text: Input text
-            sentence_finished: Whether a sentence was just finalized in this frame
-            
-        Returns:
-            Corrected text if enabled, original otherwise
-        """
         self.raw_text = text
-        
-        if self.enabled and self.corrector:
+
+        if self.enabled:
             parts = text.split('\n\n')
 
-            # Correct each completed sentence independently.
-            # Pending text is kept out of NLP output until sentence completion.
             if sentence_finished:
                 completed_parts = [part for part in parts if part.strip()]
             else:
@@ -1437,15 +1450,17 @@ class NLPCorrectionManager:
 
             while len(self.corrected_sentences) < len(completed_parts):
                 idx = len(self.corrected_sentences)
-                corrected = self._correct_sentence(completed_parts[idx])
-                self.corrected_sentences.append(corrected)
+                raw_part = completed_parts[idx]
+                self._raw_parts.append(raw_part)
+                suggestions = self._get_suggestions(raw_part)
+                self.sentence_suggestions.append(suggestions)
+                self.corrected_sentences.append(suggestions[0] if suggestions else raw_part)
 
             self.corrected_text = '\n\n'.join(self.corrected_sentences)
-
             return self.corrected_text
-        
+
         return text
-    
+
     def get_suggestions(self, text: str) -> List[str]:
         """Get correction suggestions."""
         if self.corrector:

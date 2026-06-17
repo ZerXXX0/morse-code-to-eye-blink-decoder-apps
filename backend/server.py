@@ -8,6 +8,7 @@ import sqlite3
 import sys
 import threading
 from typing import Optional
+import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,11 +49,46 @@ config = SystemConfig(
 os.chdir(BACKEND_DIR)
 system = EyeBlinkMorseSystem(config)
 
+# Enable NLP by default; load IndoBERT in the background to avoid blocking startup.
+system.nlp_manager.enable()
+
+def _preload_nlp():
+    try:
+        system.nlp_manager._ensure_corrector_loaded()
+        print("LOG: IndoBERT NLP model loaded")
+    except Exception as e:
+        print(f"LOG: NLP preload failed: {e}")
+
+threading.Thread(target=_preload_nlp, daemon=True).start()
+
 # Variabel Global
 latest_frame = None
 latest_data = {}
 is_camera_running = False
 camera_thread = None
+
+# Persistent camera handle — opened once at startup so camera_loop never
+# blocks waiting for driver initialisation.
+_persistent_cap = None
+_cap_ready = threading.Event()
+
+def _open_persistent_camera():
+    global _persistent_cap
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    if not cap.isOpened():
+        cap.release()
+        cap = cv2.VideoCapture(0)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    _persistent_cap = cap
+    _cap_ready.set()
+    print(f"LOG: Camera pre-opened (isOpened={cap.isOpened()})")
+
+threading.Thread(target=_open_persistent_camera, daemon=True).start()
 
 # Concurrency primitives.
 # db_lock     — serializes sqlite writes across the camera thread and request handlers.
@@ -60,6 +96,13 @@ camera_thread = None
 #               thread reads/mutates the same instance during calibration).
 db_lock = threading.Lock()
 system_lock = threading.Lock()
+
+# EAR baseline collection — camera thread fills _ear_samples while mode is set.
+_ear_collect_lock = threading.Lock()
+_ear_collect_mode: Optional[str] = None   # 'open' | 'closed' | None
+_ear_samples: list = []
+_ear_target_count: int = 45               # 3 s at 15 fps
+_ear_done_event = threading.Event()
 
 # Tracks who is currently logged in so the calibration-save callback knows
 # which user_id to write under. None means "no user is using the app right now."
@@ -176,25 +219,49 @@ def _require_user_id(request: Request) -> int:
 def camera_loop():
     """Background thread untuk menangkap kamera dan menjalankan AI."""
     global latest_frame, latest_data, is_camera_running
-    
-    cap = cv2.VideoCapture(0)
-    # Gunakan resolusi standar agar tidak terlalu berat
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    
-    print("LOG: Camera Hardware Opened")
-    
+    import time as _time
+
+    # Use the pre-opened persistent handle; wait up to 8 s for it to be ready
+    # (covers the case where the user clicks Start very quickly after launch).
+    _cap_ready.wait(timeout=8.0)
+    cap = _persistent_cap
+
+    # Fall back to a fresh open if the persistent one failed.
+    _owned_cap = False
+    if cap is None or not cap.isOpened():
+        print("LOG: Persistent camera not ready — opening fresh")
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        _owned_cap = True
+
+    print("LOG: Camera loop started")
+
+    target_interval = 1.0 / config.target_fps  # enforce target_fps cap
+
     while is_camera_running:
+        frame_start = _time.monotonic()
+
         ret, frame = cap.read()
         if not ret:
             print("LOG: Failed to grab frame")
             break
-        
+
         frame = cv2.flip(frame, 1) # Mirror effect
-        
+
         # Proses frame ke AI
         annotated_frame, results = system.process_frame(frame, enable_detection=True)
-        
+
+        # EAR baseline collection for calibration
+        ear_val = results.get('ear', 0.0)
+        with _ear_collect_lock:
+            if _ear_collect_mode is not None and ear_val > 0.01:
+                _ear_samples.append(ear_val)
+                if len(_ear_samples) >= _ear_target_count:
+                    _ear_collect_mode = None
+                    _ear_done_event.set()
+
         # Simpan metrik untuk dikirim via WebSocket
         cal = system.calibration_manager.get_calibration()
         latest_data = {
@@ -210,16 +277,26 @@ def camera_loop():
             "calDotMs": round(cal.avg_dot_duration_ms, 1),
             "calDashMs": round(cal.avg_dash_duration_ms, 1),
             "calThresholdMs": round(cal.avg_blink_duration_ms, 1),
+            "ear": round(ear_val, 4),
+            "nlpSentences": system.nlp_manager.get_structured_sentences(),
         }
         
         # Encode gambar ke JPG untuk dikirim via MJPEG Stream
         _, buffer = cv2.imencode('.jpg', annotated_frame)
         latest_frame = buffer.tobytes()
 
-    # Tutup kamera saat is_camera_running jadi False
-    cap.release()
+        # Throttle to target_fps — sleep only if we finished early.
+        elapsed = _time.monotonic() - frame_start
+        if elapsed < target_interval:
+            _time.sleep(target_interval - elapsed)
+
+    # Only release if we opened a fallback cap — the persistent one stays open
+    # so the next Start call returns immediately without driver re-init.
+    if _owned_cap:
+        cap.release()
+        print("LOG: Fallback camera released")
     latest_frame = None
-    print("LOG: Camera Hardware Released")
+    print("LOG: Camera loop stopped")
 
 # --- ENDPOINT KONTROL KAMERA ---
 
@@ -311,9 +388,14 @@ async def toggle_nlp():
     return {"enabled": enabled}
 
 @app.post("/api/start_calibration")
-async def start_calibration():
-    system.start_calibration()
-    return {"status": "started"}
+async def start_calibration(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    blink_count = max(1, min(int(body.get("blink_count", 3)), 20))
+    system.start_calibration(target_blinks=blink_count)
+    return {"status": "started", "blink_count": blink_count}
 
 @app.post("/api/next_step")
 async def next_step():
@@ -432,6 +514,46 @@ async def load_saved_calibration(request: Request):
     with system_lock:
         system.apply_calibration(cal)
     return {"status": "loaded"}
+
+
+@app.post("/api/calibration/ear/{mode}")
+async def collect_ear_baseline(mode: str):
+    """Collect EAR baseline for 'open' or 'closed' eye state (~3 s at 15 fps)."""
+    global _ear_collect_mode, _ear_samples, _ear_target_count
+    if mode not in ('open', 'closed'):
+        raise HTTPException(status_code=400, detail="mode must be 'open' or 'closed'")
+    if not is_camera_running:
+        raise HTTPException(status_code=400, detail="start the camera first")
+
+    _ear_done_event.clear()
+    with _ear_collect_lock:
+        _ear_samples = []
+        _ear_target_count = 45
+        _ear_collect_mode = mode
+
+    loop = asyncio.get_event_loop()
+    done = await loop.run_in_executor(None, lambda: _ear_done_event.wait(10.0))
+
+    if not done:
+        with _ear_collect_lock:
+            _ear_collect_mode = None
+        raise HTTPException(status_code=408, detail="EAR collection timed out — keep your face in frame")
+
+    with _ear_collect_lock:
+        samples = list(_ear_samples)
+
+    if not samples:
+        raise HTTPException(status_code=500, detail="no EAR samples collected")
+
+    avg = float(np.mean(samples))
+    if mode == 'open':
+        system.config.ear_max = avg
+        system.calibration_manager.calibration.ear_baseline_open = avg
+    else:
+        system.config.ear_min = avg
+        system.calibration_manager.calibration.ear_baseline_closed = avg
+
+    return {"mode": mode, "avg_ear": round(avg, 4), "samples": len(samples)}
 
 
 # --- CALIBRATION PROFILE ENDPOINTS ---

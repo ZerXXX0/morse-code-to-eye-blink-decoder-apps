@@ -2,8 +2,6 @@ import { useState, useEffect } from 'react';
 
 const API_BASE = 'http://localhost:8000';
 
-// Mirror of backend implementation.py MORSE_CODE_DICT, inverted for display
-// (character -> code). Grouped for readable rendering.
 const MORSE_REFERENCE = {
   Letters: [
     ['A', '.-'], ['B', '-...'], ['C', '-.-.'], ['D', '-..'], ['E', '.'],
@@ -24,14 +22,9 @@ const MORSE_REFERENCE = {
     ['+', '.-.-.'], ['-', '-....-'], ['_', '..--.-'], ['"', '.-..-.'],
     ['$', '...-..-'], ['@', '.--.-.'],
   ],
-  Special: [
-    ['SOS', '...---...'],
-  ],
+  Special: [['SOS', '...---...']],
 };
 
-// Centralized fetch wrapper that injects the X-User-Id header for every API
-// call. Auth is explicitly non-secure — the backend just uses the header to
-// scope per-user state (mainly calibration persistence).
 function apiFetch(path, opts = {}) {
   const userId = localStorage.getItem('userId');
   const headers = { ...(opts.headers || {}) };
@@ -39,8 +32,9 @@ function apiFetch(path, opts = {}) {
   return fetch(`${API_BASE}${path}`, { ...opts, headers });
 }
 
-
-// --- LOGIN / SIGNUP SCREEN ---
+// ─────────────────────────────────────────────────────────────────────────────
+// LOGIN SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
 function Login({ onLogin }) {
   const [mode, setMode] = useState('login');
   const [username, setUsername] = useState('');
@@ -51,10 +45,7 @@ function Login({ onLogin }) {
   const submit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!username.trim() || !password) {
-      setError('Username and password required');
-      return;
-    }
+    if (!username.trim() || !password) { setError('Username and password required'); return; }
     setBusy(true);
     try {
       const path = mode === 'login' ? '/api/auth/login' : '/api/auth/signup';
@@ -64,15 +55,8 @@ function Login({ onLogin }) {
         body: JSON.stringify({ username: username.trim(), password }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data.detail || `${mode === 'login' ? 'Sign in' : 'Sign up'} failed`);
-        return;
-      }
-      onLogin({
-        id: data.user_id,
-        username: data.username,
-        hasCalibration: !!data.has_calibration,
-      });
+      if (!res.ok) { setError(data.detail || `${mode === 'login' ? 'Sign in' : 'Sign up'} failed`); return; }
+      onLogin({ id: data.user_id, username: data.username, hasCalibration: !!data.has_calibration });
     } catch {
       setError('Cannot reach server. Is the backend running?');
     } finally {
@@ -84,63 +68,34 @@ function Login({ onLogin }) {
     <div className="flex h-screen items-center justify-center bg-slate-50 font-sans">
       <form onSubmit={submit} className="w-full max-w-sm bg-white border border-slate-200 rounded-2xl shadow-md p-8 space-y-5">
         <div className="text-center">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-teal-400 to-cyan-500 rounded-xl shadow-md shadow-teal-500/20 text-white text-3xl mb-3">
-            👁️
-          </div>
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-teal-400 to-cyan-500 rounded-xl shadow-md shadow-teal-500/20 text-white text-3xl mb-3">👁️</div>
           <h1 className="text-2xl font-extrabold text-slate-800">BlinkLink</h1>
           <p className="text-xs text-teal-600 tracking-widest uppercase font-bold mt-1">
             {mode === 'login' ? 'Sign in to continue' : 'Create your account'}
           </p>
         </div>
-
         <div>
           <label className="block text-sm font-medium text-slate-600 mb-1">Username</label>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoFocus
-            className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
-          />
+          <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus
+            className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none" />
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-600 mb-1">Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
-          />
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+            className="w-full p-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none" />
         </div>
-
-        {error && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg p-3">{error}</div>
-        )}
-
-        <button
-          type="submit"
-          disabled={busy}
-          className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white p-2 rounded-lg font-medium shadow-sm transition-colors"
-        >
+        {error && <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg p-3">{error}</div>}
+        <button type="submit" disabled={busy}
+          className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white p-2 rounded-lg font-medium shadow-sm transition-colors">
           {busy ? '…' : mode === 'login' ? 'Sign In' : 'Sign Up'}
         </button>
-
         <p className="text-center text-sm text-slate-500">
           {mode === 'login' ? (
-            <>No account?{' '}
-              <button type="button" onClick={() => { setMode('signup'); setError(''); }} className="text-teal-700 font-medium hover:underline">
-                Sign up
-              </button>
-            </>
+            <>No account?{' '}<button type="button" onClick={() => { setMode('signup'); setError(''); }} className="text-teal-700 font-medium hover:underline">Sign up</button></>
           ) : (
-            <>Already have one?{' '}
-              <button type="button" onClick={() => { setMode('login'); setError(''); }} className="text-teal-700 font-medium hover:underline">
-                Sign in
-              </button>
-            </>
+            <>Already have one?{' '}<button type="button" onClick={() => { setMode('login'); setError(''); }} className="text-teal-700 font-medium hover:underline">Sign in</button></>
           )}
         </p>
-
         <p className="text-center text-[11px] text-slate-400 leading-snug">
           Auth here isn't for security — it just keeps your calibration<br />separate from other users on this machine.
         </p>
@@ -149,44 +104,375 @@ function Login({ onLogin }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CALIBRATION MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+function CalibrationModal({ onClose, onStatusChange, onCameraStart, isCameraRunning, isCalibrating, calProgress, calData, currentEar }) {
+  const [step, setStep] = useState(0);
+  const [blinkCount, setBlinkCount] = useState(3);
+
+  // Auto-start the camera when the calibration modal opens.
+  useEffect(() => {
+    if (!isCameraRunning) onCameraStart();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [earOpenResult, setEarOpenResult] = useState(null);
+  const [earClosedResult, setEarClosedResult] = useState(null);
+  const [capturing, setCapturing] = useState(false);
+  const [captureError, setCaptureError] = useState('');
+  const [profileName, setProfileName] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  const STEP_LABELS = ['Setup', 'Eye Open', 'Eye Closed', 'Dot Blinks', 'Dash Blinks', 'Done'];
+
+  // Auto-advance from dots to dashes
+  useEffect(() => {
+    if (step === 3 && isCalibrating && calProgress[0] === 'DASHES') setStep(4);
+  }, [isCalibrating, calProgress, step]);
+
+  // Auto-advance to complete when calibration finishes
+  useEffect(() => {
+    if (step >= 3 && step < 5 && !isCalibrating && calData.isCalibrated) {
+      setStep(5);
+      onStatusChange('✅ Calibration Complete! Ready to type.');
+    }
+  }, [isCalibrating, calData.isCalibrated, step]);
+
+  const handleEarCapture = async (mode) => {
+    setCaptureError('');
+    setCapturing(true);
+    try {
+      const res = await apiFetch(`/api/calibration/ear/${mode}`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setCaptureError(data.detail || 'Capture failed'); return; }
+      if (mode === 'open') setEarOpenResult(data.avg_ear);
+      else setEarClosedResult(data.avg_ear);
+    } catch {
+      setCaptureError('Failed to reach server');
+    } finally {
+      setCapturing(false);
+    }
+  };
+
+  const handleStartBlinkCal = async () => {
+    setCaptureError('');
+    try {
+      await apiFetch('/api/start_calibration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blink_count: blinkCount }),
+      });
+      setStep(3);
+    } catch {
+      setCaptureError('Failed to start calibration');
+    }
+  };
+
+  const handleNextStep = async () => {
+    await apiFetch('/api/next_step', { method: 'POST' });
+  };
+
+  const handleSaveProfile = async () => {
+    if (!profileName.trim()) return;
+    setSavingProfile(true);
+    try {
+      const res = await apiFetch('/api/calibrations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: profileName.trim() }),
+      });
+      if (res.ok) {
+        onStatusChange(`✅ Profile "${profileName.trim()}" saved.`);
+        onClose();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setCaptureError(d.detail || 'Failed to save profile');
+      }
+    } catch {
+      setCaptureError('Failed to save profile');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const dotCurrent = calProgress[0] === 'DOTS' ? (calProgress[1] ?? 0) : 0;
+  const dashCurrent = calProgress[0] === 'DASHES' ? (calProgress[1] ?? 0) : 0;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+
+        {/* Header with step indicator */}
+        <div className="bg-gradient-to-r from-teal-500 to-cyan-500 p-5 text-white">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold">🎯 Calibration</h2>
+            <button onClick={onClose} className="text-white/70 hover:text-white text-2xl leading-none font-bold">×</button>
+          </div>
+          <div className="flex gap-1">
+            {STEP_LABELS.map((label, i) => (
+              <div key={i} className={`flex-1 text-center text-[9px] font-semibold py-1 rounded transition-colors ${
+                i === step ? 'bg-white text-teal-700' :
+                i < step  ? 'bg-white/40 text-white' : 'bg-white/15 text-white/50'
+              }`}>{label}</div>
+            ))}
+          </div>
+        </div>
+
+        <div className="p-6">
+
+          {/* Camera warning */}
+          {!isCameraRunning && step > 0 && step < 5 && (
+            <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg p-3">
+              ⚠️ Camera must be running for calibration. Start it from the main screen.
+            </div>
+          )}
+
+          {/* Error */}
+          {captureError && (
+            <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg p-3">{captureError}</div>
+          )}
+
+          {/* ── Step 0: Setup ───────────────────────────────────────── */}
+          {step === 0 && (
+            <div className="space-y-5">
+              <div>
+                <p className="text-slate-800 font-semibold mb-1">Blinks per type</p>
+                <p className="text-xs text-slate-500 mb-3">
+                  You'll do this many short blinks, then this many long blinks.
+                </p>
+                <div className="flex gap-2">
+                  {[3, 5, 7, 10].map(n => (
+                    <button key={n} onClick={() => setBlinkCount(n)}
+                      className={`flex-1 py-2.5 rounded-xl font-mono font-bold text-sm border-2 transition-colors ${
+                        blinkCount === n
+                          ? 'bg-teal-600 text-white border-teal-600'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-teal-400'
+                      }`}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Steps: measure open-eye EAR → closed-eye EAR → {blinkCount} short blinks → {blinkCount} long blinks.
+              </p>
+              <button onClick={() => { setCaptureError(''); setStep(1); }} disabled={!isCameraRunning}
+                className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white p-3 rounded-xl font-semibold transition-colors">
+                {isCameraRunning ? 'Begin →' : 'Start camera first'}
+              </button>
+            </div>
+          )}
+
+          {/* ── Step 1: Open Eye EAR ─────────────────────────────────── */}
+          {step === 1 && (
+            <div className="space-y-4 text-center">
+              <div className="text-6xl">👁️</div>
+              <p className="text-slate-800 font-semibold text-lg">Open Eye Baseline</p>
+              <p className="text-sm text-slate-500">Look straight at the camera with eyes fully open. Click Capture — system records 3 seconds of EAR data.</p>
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                <p className="text-xs text-slate-500 mb-0.5">Live EAR</p>
+                <p className="text-3xl font-mono font-bold text-teal-700">{currentEar.toFixed(4)}</p>
+              </div>
+              {earOpenResult !== null && (
+                <div className="bg-teal-50 border border-teal-200 rounded-xl p-3">
+                  <p className="text-xs text-teal-600">Captured open EAR</p>
+                  <p className="text-2xl font-mono font-bold text-teal-800">{earOpenResult.toFixed(4)}</p>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button onClick={() => handleEarCapture('open')} disabled={capturing || !isCameraRunning}
+                  className="flex-1 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white p-2.5 rounded-xl font-medium transition-colors">
+                  {capturing ? '⏳ Capturing…' : '📸 Capture (3 s)'}
+                </button>
+                {earOpenResult !== null && (
+                  <button onClick={() => { setCaptureError(''); setStep(2); }}
+                    className="flex-1 bg-slate-700 hover:bg-slate-800 text-white p-2.5 rounded-xl font-medium transition-colors">
+                    Next →
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 2: Closed Eye EAR ───────────────────────────────── */}
+          {step === 2 && (
+            <div className="space-y-4 text-center">
+              <div className="text-6xl">😑</div>
+              <p className="text-slate-800 font-semibold text-lg">Closed Eye Baseline</p>
+              <p className="text-sm text-slate-500">Gently close both eyes. Click Capture — system records 3 seconds of EAR data.</p>
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                <p className="text-xs text-slate-500 mb-0.5">Live EAR</p>
+                <p className="text-3xl font-mono font-bold text-teal-700">{currentEar.toFixed(4)}</p>
+              </div>
+              {earClosedResult !== null && (
+                <div className="bg-teal-50 border border-teal-200 rounded-xl p-3">
+                  <p className="text-xs text-teal-600">Captured closed EAR</p>
+                  <p className="text-2xl font-mono font-bold text-teal-800">{earClosedResult.toFixed(4)}</p>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button onClick={() => setStep(1)}
+                  className="px-4 py-2.5 border border-slate-300 rounded-xl text-slate-600 hover:bg-slate-50 text-sm font-medium">
+                  ← Back
+                </button>
+                <button onClick={() => handleEarCapture('closed')} disabled={capturing || !isCameraRunning}
+                  className="flex-1 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white p-2.5 rounded-xl font-medium transition-colors">
+                  {capturing ? '⏳ Capturing…' : '📸 Capture (3 s)'}
+                </button>
+                {earClosedResult !== null && (
+                  <button onClick={() => { setCaptureError(''); handleStartBlinkCal(); }}
+                    className="flex-1 bg-slate-700 hover:bg-slate-800 text-white p-2.5 rounded-xl font-medium transition-colors">
+                    Next →
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 3: Dot Blinks ───────────────────────────────────── */}
+          {step === 3 && (
+            <div className="space-y-4 text-center">
+              <div className="text-5xl font-mono text-teal-600 tracking-wider">· · ·</div>
+              <p className="text-slate-800 font-semibold text-lg">Short Blinks (Dots)</p>
+              <p className="text-sm text-slate-500">
+                Do <strong>{blinkCount}</strong> short, quick blinks — each under ~300 ms.
+              </p>
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <p className="text-xs text-slate-500 mb-1">Progress</p>
+                <p className="text-4xl font-mono font-bold text-teal-700">{dotCurrent} / {blinkCount}</p>
+                <div className="mt-3 h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                  <div className="h-full bg-teal-500 rounded-full transition-all duration-300"
+                    style={{ width: `${(dotCurrent / blinkCount) * 100}%` }} />
+                </div>
+              </div>
+              <button onClick={handleNextStep}
+                className="w-full border border-slate-300 text-slate-600 hover:bg-slate-50 p-2 rounded-xl text-sm transition-colors">
+                Skip to Dash phase →
+              </button>
+            </div>
+          )}
+
+          {/* ── Step 4: Dash Blinks ──────────────────────────────────── */}
+          {step === 4 && (
+            <div className="space-y-4 text-center">
+              <div className="text-4xl font-black text-slate-700 tracking-[0.3em]">— — —</div>
+              <p className="text-slate-800 font-semibold text-lg">Long Blinks (Dashes)</p>
+              <p className="text-sm text-slate-500">
+                Do <strong>{blinkCount}</strong> long blinks — hold each blink for ~500 ms or more.
+              </p>
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <p className="text-xs text-slate-500 mb-1">Progress</p>
+                <p className="text-4xl font-mono font-bold text-amber-600">{dashCurrent} / {blinkCount}</p>
+                <div className="mt-3 h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                  <div className="h-full bg-amber-500 rounded-full transition-all duration-300"
+                    style={{ width: `${(dashCurrent / blinkCount) * 100}%` }} />
+                </div>
+              </div>
+              <button onClick={handleNextStep}
+                className="w-full border border-slate-300 text-slate-600 hover:bg-slate-50 p-2 rounded-xl text-sm transition-colors">
+                Finalize now →
+              </button>
+            </div>
+          )}
+
+          {/* ── Step 5: Complete ─────────────────────────────────────── */}
+          {step === 5 && (
+            <div className="space-y-4">
+              <div className="text-center">
+                <div className="text-5xl mb-2">✅</div>
+                <p className="text-slate-800 font-bold text-lg">Calibration Complete!</p>
+              </div>
+              <div className="bg-teal-50 border border-teal-100 rounded-xl p-4 space-y-2 text-sm">
+                <div className="flex justify-between text-teal-700">
+                  <span>· Dot average</span><span className="font-mono font-bold">{calData.dotMs} ms</span>
+                </div>
+                <div className="flex justify-between text-teal-700">
+                  <span>— Dash average</span><span className="font-mono font-bold">{calData.dashMs} ms</span>
+                </div>
+                <div className="flex justify-between text-teal-800 font-semibold border-t border-teal-200 pt-2">
+                  <span>Threshold</span><span className="font-mono">{calData.thresholdMs} ms</span>
+                </div>
+                {earOpenResult !== null && earClosedResult !== null && (
+                  <>
+                    <div className="flex justify-between text-teal-700 border-t border-teal-200 pt-2">
+                      <span>EAR open</span><span className="font-mono">{earOpenResult.toFixed(4)}</span>
+                    </div>
+                    <div className="flex justify-between text-teal-700">
+                      <span>EAR closed</span><span className="font-mono">{earClosedResult.toFixed(4)}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 mb-2">Save as named profile (optional)</p>
+                <div className="flex gap-2">
+                  <input type="text" value={profileName} onChange={(e) => setProfileName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveProfile()}
+                    placeholder="Profile name…"
+                    className="flex-1 text-sm p-2 border border-slate-200 rounded-lg focus:ring-1 focus:ring-teal-500 focus:outline-none" />
+                  <button onClick={handleSaveProfile} disabled={savingProfile || !profileName.trim()}
+                    className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white text-sm px-3 rounded-lg font-medium transition-colors">
+                    {savingProfile ? '…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+              <button onClick={onClose}
+                className="w-full bg-slate-800 hover:bg-slate-900 text-white p-2.5 rounded-xl font-semibold transition-colors">
+                Done
+              </button>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN APP
+// ─────────────────────────────────────────────────────────────────────────────
 function App() {
-  // --- AUTH STATE ---
+  // Auth
   const [currentUser, setCurrentUser] = useState(() => {
     const id = localStorage.getItem('userId');
     const name = localStorage.getItem('username');
     return id && name ? { id: parseInt(id, 10), username: name } : null;
   });
 
-  // --- STATE MANAGEMENT ---
+  // Settings sliders
   const [letterGap, setLetterGap] = useState(1.5);
   const [wordGap, setWordGap] = useState(3.0);
   const [sentenceGap, setSentenceGap] = useState(5.0);
-  const [nlpEnabled, setNlpEnabled] = useState(false);
   const [showMorseRef, setShowMorseRef] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
 
-  const [eyeState, setEyeState] = useState("UNKNOWN");
+  // Live AI metrics from WebSocket
+  const [eyeState, setEyeState] = useState('UNKNOWN');
   const [confidence, setConfidence] = useState(0.0);
   const [fps, setFps] = useState(0.0);
-  const [currentMorse, setCurrentMorse] = useState("");
+  const [currentMorse, setCurrentMorse] = useState('');
+  const [currentEar, setCurrentEar] = useState(0.0);
+  const [decodedText, setDecodedText] = useState('');
+  const [nlpSentences, setNlpSentences] = useState([]);  // [{raw, suggestions:[]}]
+  const [selectedSuggestions, setSelectedSuggestions] = useState({});  // {sentenceIdx: choiceIdx}
 
-  const [decodedText, setDecodedText] = useState("");
-  const [nlpText, setNlpText] = useState("");
-  const [calStatus, setCalStatus] = useState("Connecting to Engine...");
-
-  // Calibration result values streamed from the backend
+  // Calibration state
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const [calProgress, setCalProgress] = useState(['DONE', 0, 0]);
   const [calData, setCalData] = useState({ isCalibrated: false, dotMs: 0, dashMs: 0, thresholdMs: 0 });
+  const [calStatus, setCalStatus] = useState('Connecting to Engine…');
+  const [showCalModal, setShowCalModal] = useState(false);
 
-  // Saved calibration profiles from DB
+  // Camera
+  const [isCameraRunning, setIsCameraRunning] = useState(false);
+
+  // Calibration profiles (sidebar)
   const [calProfiles, setCalProfiles] = useState([]);
   const [showProfiles, setShowProfiles] = useState(false);
   const [newProfileName, setNewProfileName] = useState('');
   const [profileBusy, setProfileBusy] = useState(false);
 
-  // Pending slider updates — batched + debounced into a single POST. Each
-  // movement merges into pendingConfig; a 200ms window of stillness flushes
-  // it. Pure React state keeps the react-hooks lint happy (no refs to
-  // mutate, no module-level side effects).
+  // Pending config debounce
   const [pendingConfig, setPendingConfig] = useState({});
 
   useEffect(() => {
@@ -199,7 +485,7 @@ function App() {
           body: JSON.stringify(pendingConfig),
         });
       } catch (e) {
-        console.error('Gagal update config', e);
+        console.error('Failed to update config', e);
       } finally {
         setPendingConfig({});
       }
@@ -207,86 +493,73 @@ function App() {
     return () => clearTimeout(timer);
   }, [pendingConfig]);
 
-  // --- INTEGRASI WEBSOCKET (REAL-TIME DATA) ---
-  // Only open the WebSocket once a user is logged in — otherwise we'd push
-  // engine state into the Login screen where it's unused.
+  // WebSocket
   useEffect(() => {
     if (!currentUser) return;
     const wsUrl = API_BASE.replace(/^http/, 'ws') + '/ws/data';
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      console.log('Terhubung ke peladen AI!');
-      setCalStatus((prev) => prev.startsWith('✅') ? prev : 'System Online - Connected to Engine');
+      setCalStatus(prev => prev.startsWith('✅') ? prev : 'System Online — Connected to Engine');
     };
 
     ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
-        if (data.eyeState) setEyeState(data.eyeState);
-        if (data.confidence !== undefined) setConfidence(data.confidence);
-        if (data.fps !== undefined) setFps(data.fps);
-        if (data.morseSequence !== undefined) setCurrentMorse(data.morseSequence);
-        if (data.decodedText !== undefined) setDecodedText(data.decodedText);
-        if (data.nlpText !== undefined) setNlpText(data.nlpText);
+        const d = JSON.parse(event.data);
+        if (d.eyeState) setEyeState(d.eyeState);
+        if (d.confidence !== undefined) setConfidence(d.confidence);
+        if (d.fps !== undefined) setFps(d.fps);
+        if (d.morseSequence !== undefined) setCurrentMorse(d.morseSequence);
+        if (d.decodedText !== undefined) setDecodedText(d.decodedText);
+        if (d.ear !== undefined) setCurrentEar(d.ear);
+        if (d.nlpSentences !== undefined) setNlpSentences(d.nlpSentences);
 
-        if (data.isCalibrating) {
-          const [phase, current, target] = data.calProgress;
-          setCalStatus(`🎯 Calibrating ${phase}: ${current} / ${target} blinks`);
-        } else if (data.isCalibrating === false) {
-          setCalStatus(prev => {
-            if (prev.startsWith("🎯 Calibrating")) {
-              return "✅ Calibration Complete! Ready to type.";
-            }
-            return prev;
-          });
-        }
+        if (d.isCalibrating !== undefined) setIsCalibrating(d.isCalibrating);
+        if (d.calProgress !== undefined) setCalProgress(d.calProgress);
 
-        if (data.isCalibrated !== undefined) {
+        if (d.isCalibrated !== undefined) {
           setCalData({
-            isCalibrated: data.isCalibrated,
-            dotMs: data.calDotMs ?? 0,
-            dashMs: data.calDashMs ?? 0,
-            thresholdMs: data.calThresholdMs ?? 0,
+            isCalibrated: d.isCalibrated,
+            dotMs: d.calDotMs ?? 0,
+            dashMs: d.calDashMs ?? 0,
+            thresholdMs: d.calThresholdMs ?? 0,
           });
         }
-      } catch (error) {
-        console.error("Error parsing WebSocket data:", error);
+
+        if (d.isCalibrating) {
+          const [phase, current, target] = d.calProgress;
+          setCalStatus(`🎯 Calibrating ${phase}: ${current} / ${target} blinks`);
+        } else if (d.isCalibrating === false) {
+          setCalStatus(prev => prev.startsWith('🎯 Calibrating') ? '✅ Calibration Complete! Ready to type.' : prev);
+        }
+      } catch (err) {
+        console.error('WebSocket parse error:', err);
       }
     };
 
-    ws.onerror = (error) => {
-      console.error('Koneksi WebSocket bermasalah:', error);
-      setCalStatus("Connection Error! Is backend running?");
-    };
+    ws.onerror = () => setCalStatus('Connection Error! Is backend running?');
+    ws.onclose = () => console.log('Disconnected from AI engine');
 
-    ws.onclose = () => {
-      console.log('Terputus dari peladen AI');
-    };
-
-    return () => {
-      ws.close();
-    };
+    return () => ws.close();
   }, [currentUser]);
 
-  // --- ESC EXITS FOCUS MODE ---
+  // ESC exits focus mode
   useEffect(() => {
     if (!focusMode) return;
-    const onKey = (e) => {
-      if (e.key === 'Escape') setFocusMode(false);
-    };
+    const onKey = (e) => { if (e.key === 'Escape') setFocusMode(false); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [focusMode]);
 
-  // --- AUTH HANDLERS ---
+  // ── Auth handlers ──────────────────────────────────────────────────────────
+
   const fetchProfiles = async () => {
     try {
       const res = await apiFetch('/api/calibrations');
       const data = await res.json();
       setCalProfiles(data.profiles || []);
     } catch (e) {
-      console.error("Failed to fetch calibration profiles", e);
+      console.error('Failed to fetch calibration profiles', e);
     }
   };
 
@@ -294,27 +567,70 @@ function App() {
     localStorage.setItem('userId', String(user.id));
     localStorage.setItem('username', user.username);
     setCurrentUser({ id: user.id, username: user.username });
-    setCalStatus(
-      user.hasCalibration
-        ? '✅ Calibration loaded from your account. Ready to type.'
-        : 'Welcome! Run Begin Cal. to set your blink thresholds.'
-    );
-    // Pre-fetch saved profiles so the panel is ready
-    setTimeout(() => fetchProfiles(), 300);
+    setCalStatus(user.hasCalibration
+      ? '✅ Calibration loaded from your account. Ready to type.'
+      : 'Welcome! Open Calibration to set your blink thresholds.');
+    setTimeout(fetchProfiles, 300);
   };
+
+  const handleSignOut = () => {
+    localStorage.removeItem('userId');
+    localStorage.removeItem('username');
+    setCurrentUser(null);
+    setDecodedText(''); setNlpSentences([]); setCurrentMorse('');
+    setEyeState('UNKNOWN'); setCalStatus('Connecting to Engine…');
+  };
+
+  // ── Slider ─────────────────────────────────────────────────────────────────
+
+  const handleSliderChange = (key, setter) => (e) => {
+    const val = parseFloat(e.target.value);
+    setter(val);
+    setPendingConfig(prev => ({ ...prev, [key]: val }));
+  };
+
+  // ── Camera ─────────────────────────────────────────────────────────────────
+
+  const handleCameraStart = async () => {
+    try {
+      await apiFetch('/api/camera/start', { method: 'POST' });
+      setIsCameraRunning(true);
+      setCalStatus('📷 Camera starting…');
+    } catch (e) { console.error('Failed to start camera'); }
+  };
+
+  const handleCameraStop = async () => {
+    try {
+      await apiFetch('/api/camera/stop', { method: 'POST' });
+      setIsCameraRunning(false);
+      setCalStatus('📷 Camera stopped.');
+    } catch (e) { console.error('Failed to stop camera'); }
+  };
+
+  const handleCameraReset = async () => {
+    try {
+      await apiFetch('/api/camera/reset', { method: 'POST' });
+      setDecodedText(''); setNlpSentences([]);
+      setCalStatus('🔄 System & Camera Reset.');
+    } catch (e) { console.error('Failed to reset camera'); }
+  };
+
+  // ── Text ───────────────────────────────────────────────────────────────────
+
+  const handleClearText = async () => {
+    setDecodedText(''); setNlpSentences([]); setSelectedSuggestions({});
+    try { await apiFetch('/api/clear_text', { method: 'POST' }); }
+    catch (e) { console.error('Failed to clear text'); }
+  };
+
+  // ── Calibration (sidebar load) ─────────────────────────────────────────────
 
   const handleLoadSavedCal = async () => {
     try {
       const res = await apiFetch('/api/calibration/load', { method: 'POST' });
-      if (res.ok) {
-        setCalStatus('✅ Saved calibration reloaded.');
-      } else {
-        const d = await res.json().catch(() => ({}));
-        setCalStatus(`❌ ${d.detail || 'No saved calibration found.'}`);
-      }
-    } catch (e) {
-      setCalStatus('❌ Error loading saved calibration.');
-    }
+      if (res.ok) setCalStatus('✅ Saved calibration reloaded.');
+      else { const d = await res.json().catch(() => ({})); setCalStatus(`❌ ${d.detail || 'No saved calibration found.'}`); }
+    } catch { setCalStatus('❌ Error loading saved calibration.'); }
   };
 
   const handleSaveProfile = async () => {
@@ -326,140 +642,25 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newProfileName.trim() }),
       });
-      if (res.ok) {
-        setNewProfileName('');
-        await fetchProfiles();
-        setCalStatus(`✅ Profile "${newProfileName.trim()}" saved.`);
-      } else {
-        const d = await res.json().catch(() => ({}));
-        setCalStatus(`❌ ${d.detail || 'Failed to save profile.'}`);
-      }
-    } catch (e) {
-      setCalStatus('❌ Error saving profile.');
-    } finally {
-      setProfileBusy(false);
-    }
+      if (res.ok) { setNewProfileName(''); await fetchProfiles(); setCalStatus(`✅ Profile "${newProfileName.trim()}" saved.`); }
+      else { const d = await res.json().catch(() => ({})); setCalStatus(`❌ ${d.detail || 'Failed to save profile.'}`); }
+    } catch { setCalStatus('❌ Error saving profile.'); }
+    finally { setProfileBusy(false); }
   };
 
   const handleLoadProfile = async (profileId, profileName) => {
     try {
       const res = await apiFetch(`/api/calibrations/${profileId}/load`, { method: 'POST' });
-      if (res.ok) {
-        setCalStatus(`✅ Profile "${profileName}" loaded.`);
-      } else {
-        const d = await res.json().catch(() => ({}));
-        setCalStatus(`❌ ${d.detail || 'Failed to load profile.'}`);
-      }
-    } catch (e) {
-      setCalStatus('❌ Error loading profile.');
-    }
+      if (res.ok) setCalStatus(`✅ Profile "${profileName}" loaded.`);
+      else { const d = await res.json().catch(() => ({})); setCalStatus(`❌ ${d.detail || 'Failed to load profile.'}`); }
+    } catch { setCalStatus('❌ Error loading profile.'); }
   };
 
   const handleDeleteProfile = async (profileId, profileName) => {
     try {
       const res = await apiFetch(`/api/calibrations/${profileId}`, { method: 'DELETE' });
-      if (res.ok) {
-        setCalProfiles(prev => prev.filter(p => p.id !== profileId));
-        setCalStatus(`🗑️ Profile "${profileName}" deleted.`);
-      }
-    } catch (e) {
-      setCalStatus('❌ Error deleting profile.');
-    }
-  };
-
-  const handleSignOut = () => {
-    localStorage.removeItem('userId');
-    localStorage.removeItem('username');
-    setCurrentUser(null);
-    // Drop transient UI state so a fresh signin doesn't see stale data.
-    setDecodedText('');
-    setNlpText('');
-    setCurrentMorse('');
-    setEyeState('UNKNOWN');
-    setCalStatus('Connecting to Engine...');
-  };
-
-  // --- INTEGRASI REST API (KONTROL TOMBOL & INPUT) ---
-
-  const handleSliderChange = (key, setter) => (e) => {
-    const val = parseFloat(e.target.value);
-    setter(val);
-    setPendingConfig(prev => ({ ...prev, [key]: val }));
-  };
-
-  const handleNlpToggle = async () => {
-    try {
-      const res = await apiFetch('/api/toggle_nlp', { method: 'POST' });
-      const data = await res.json();
-      if (typeof data.enabled === 'boolean') {
-        setNlpEnabled(data.enabled);
-      } else {
-        setNlpEnabled((prev) => !prev);
-      }
-    } catch (e) {
-      console.error("Gagal toggle NLP", e);
-    }
-  };
-
-  const handleStartCalibration = async () => {
-    setCalStatus("⏳ Starting Calibration...");
-    try {
-      await apiFetch('/api/start_calibration', { method: 'POST' });
-    } catch (e) {
-      console.error("Gagal memulai kalibrasi", e);
-    }
-  };
-
-  const handleNextStep = async () => {
-    try {
-      await apiFetch('/api/next_step', { method: 'POST' });
-    } catch (e) {
-      console.error("Gagal lanjut ke tahap kalibrasi berikutnya", e);
-    }
-  };
-
-  const handleResetCalibration = async () => {
-    setCalStatus("🔄 Resetting calibration...");
-    try {
-      await apiFetch('/api/reset_calibration', { method: 'POST' });
-      setCalStatus("ℹ️ Calibration Reset to Default. Ready.");
-    } catch (e) {
-      console.error("Gagal mereset kalibrasi", e);
-      setCalStatus("❌ Error resetting calibration!");
-    }
-  };
-
-  const handleClearText = async () => {
-    setDecodedText("");
-    setNlpText("");
-    try {
-      await apiFetch('/api/clear_text', { method: 'POST' });
-    } catch (error) {
-      console.error("Gagal mengirim perintah reset teks ke peladen:", error);
-    }
-  };
-
-  const handleCameraStart = async () => {
-    try {
-      await apiFetch('/api/camera/start', { method: 'POST' });
-      setCalStatus("📷 Camera starting...");
-    } catch (e) { console.error("Gagal start kamera"); }
-  };
-
-  const handleCameraStop = async () => {
-    try {
-      await apiFetch('/api/camera/stop', { method: 'POST' });
-      setCalStatus("📷 Camera stopped.");
-    } catch (e) { console.error("Gagal stop kamera"); }
-  };
-
-  const handleCameraReset = async () => {
-    try {
-      await apiFetch('/api/camera/reset', { method: 'POST' });
-      setDecodedText("");
-      setNlpText("");
-      setCalStatus("🔄 System & Camera Reset.");
-    } catch (e) { console.error("Gagal reset kamera"); }
+      if (res.ok) { setCalProfiles(prev => prev.filter(p => p.id !== profileId)); setCalStatus(`🗑️ Profile "${profileName}" deleted.`); }
+    } catch { setCalStatus('❌ Error deleting profile.'); }
   };
 
   const goFullscreen = () => {
@@ -467,162 +668,123 @@ function App() {
     if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
   };
 
-  // --- AUTH GATE ---
-  if (!currentUser) {
-    return <Login onLogin={handleLogin} />;
-  }
+  if (!currentUser) return <Login onLogin={handleLogin} />;
 
   return (
     <>
       <div className="flex h-screen bg-slate-50 text-slate-800 font-sans">
 
-        {/* SIDEBAR */}
+        {/* ── SIDEBAR ──────────────────────────────────────────────── */}
         <div className="w-80 bg-white p-6 overflow-y-auto border-r border-slate-200 flex flex-col shadow-sm z-10">
           <h2 className="text-xl font-bold mb-6 text-slate-800">⚙️ Settings</h2>
 
+          {/* Timing sliders */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-slate-600 mb-2">Letter Gap: {letterGap.toFixed(2)}s</label>
-            <input
-              type="range" min="0.3" max="5" step="0.1" value={letterGap}
+            <input type="range" min="0.3" max="5" step="0.1" value={letterGap}
               onChange={handleSliderChange('letter_gap_seconds', setLetterGap)}
-              className="w-full accent-teal-600"
-            />
+              className="w-full accent-teal-600" />
           </div>
-
           <div className="mb-4">
             <label className="block text-sm font-medium text-slate-600 mb-2">Word Gap: {wordGap.toFixed(2)}s</label>
-            <input
-              type="range" min="0.5" max="8" step="0.1" value={wordGap}
+            <input type="range" min="0.5" max="8" step="0.1" value={wordGap}
               onChange={handleSliderChange('word_gap_seconds', setWordGap)}
-              className="w-full accent-teal-600"
-            />
+              className="w-full accent-teal-600" />
           </div>
-
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-slate-600 mb-2">Sentence Gap: {sentenceGap.toFixed(2)}s</label>
-            <input
-              type="range" min="1" max="12" step="0.1" value={sentenceGap}
-              onChange={handleSliderChange('sentence_gap_seconds', setSentenceGap)}
-              className="w-full accent-teal-600"
-            />
-          </div>
-
           <div className="mb-6">
-            <label className="flex items-center space-x-3 cursor-pointer">
-              <input
-                type="checkbox" checked={nlpEnabled}
-                onChange={handleNlpToggle}
-                className="w-4 h-4 accent-teal-600 rounded bg-slate-100 border-slate-300"
-              />
-              <span className="text-slate-700 font-medium">Enable NLP Correction</span>
-            </label>
+            <label className="block text-sm font-medium text-slate-600 mb-2">Sentence Gap: {sentenceGap.toFixed(2)}s</label>
+            <input type="range" min="1" max="12" step="0.1" value={sentenceGap}
+              onChange={handleSliderChange('sentence_gap_seconds', setSentenceGap)}
+              className="w-full accent-teal-600" />
           </div>
 
           <hr className="border-slate-100 my-4" />
 
+          {/* Calibration */}
           <div className="mb-6">
             <h3 className="text-lg font-semibold mb-2 text-slate-800">🎯 Calibration</h3>
-            <p className="text-xs text-slate-500 mb-3">Blink short (dots) then long (dashes)</p>
-
-            {/* Run controls */}
-            <div className="grid grid-cols-2 gap-2 mb-2">
-              <button onClick={handleStartCalibration} className="bg-teal-600 hover:bg-teal-700 text-white transition-colors p-2 rounded text-sm font-medium shadow-sm">Begin Cal.</button>
-              <button onClick={handleNextStep} className="bg-slate-200 hover:bg-slate-300 text-slate-700 transition-colors p-2 rounded text-sm font-medium">Next Step</button>
-            </div>
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <button onClick={handleResetCalibration} className="bg-rose-500 hover:bg-rosese-600 text-white transition-colors p-2 rounded text-sm font-medium shadow-sm">Reset Cal.</button>
-              <button onClick={handleLoadSavedCal} className="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 transition-colors p-2 rounded text-sm font-medium">Load Saved</button>
-            </div>
 
             {/* Active calibration values */}
             {calData.isCalibrated && (
               <div className="bg-teal-50 border border-teal-100 rounded-lg p-3 mb-3 text-xs space-y-1">
                 <p className="font-semibold text-teal-800 mb-1">Active Calibration</p>
-                <div className="flex justify-between text-teal-700">
-                  <span>· Dot avg</span><span className="font-mono">{calData.dotMs} ms</span>
-                </div>
-                <div className="flex justify-between text-teal-700">
-                  <span>— Dash avg</span><span className="font-mono">{calData.dashMs} ms</span>
-                </div>
-                <div className="flex justify-between text-teal-800 font-semibold border-t border-teal-200 pt-1 mt-1">
-                  <span>Threshold</span><span className="font-mono">{calData.thresholdMs} ms</span>
-                </div>
+                <div className="flex justify-between text-teal-700"><span>· Dot avg</span><span className="font-mono">{calData.dotMs} ms</span></div>
+                <div className="flex justify-between text-teal-700"><span>— Dash avg</span><span className="font-mono">{calData.dashMs} ms</span></div>
+                <div className="flex justify-between text-teal-800 font-semibold border-t border-teal-200 pt-1 mt-1"><span>Threshold</span><span className="font-mono">{calData.thresholdMs} ms</span></div>
               </div>
             )}
+
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <button onClick={() => setShowCalModal(true)}
+                className="bg-teal-600 hover:bg-teal-700 text-white transition-colors p-2 rounded text-sm font-medium shadow-sm">
+                Open Cal.
+              </button>
+              <button onClick={handleLoadSavedCal}
+                className="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 transition-colors p-2 rounded text-sm font-medium">
+                Load Saved
+              </button>
+            </div>
 
             {/* Save as named profile */}
             {calData.isCalibrated && (
               <div className="mb-3">
-                <p className="text-xs text-slate-500 mb-1">Save as profile</p>
+                <p className="text-xs text-slate-500 mb-1">Save current as profile</p>
                 <div className="flex gap-1">
-                  <input
-                    type="text"
-                    value={newProfileName}
-                    onChange={(e) => setNewProfileName(e.target.value)}
+                  <input type="text" value={newProfileName} onChange={(e) => setNewProfileName(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSaveProfile()}
                     placeholder="Profile name…"
-                    className="flex-1 text-xs p-1.5 border border-slate-200 rounded focus:ring-1 focus:ring-teal-500 focus:outline-none"
-                  />
-                  <button
-                    onClick={handleSaveProfile}
-                    disabled={profileBusy || !newProfileName.trim()}
-                    className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white text-xs px-2 rounded font-medium transition-colors"
-                  >
+                    className="flex-1 text-xs p-1.5 border border-slate-200 rounded focus:ring-1 focus:ring-teal-500 focus:outline-none" />
+                  <button onClick={handleSaveProfile} disabled={profileBusy || !newProfileName.trim()}
+                    className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white text-xs px-2 rounded font-medium transition-colors">
                     {profileBusy ? '…' : 'Save'}
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Saved profiles list */}
-            <button
-              onClick={() => { setShowProfiles(v => !v); if (!showProfiles) fetchProfiles(); }}
-              className="w-full flex justify-between items-center text-xs text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded px-3 py-2 font-medium transition-colors"
-            >
+            {/* Saved profiles */}
+            <button onClick={() => { setShowProfiles(v => !v); if (!showProfiles) fetchProfiles(); }}
+              className="w-full flex justify-between items-center text-xs text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded px-3 py-2 font-medium transition-colors">
               <span>Saved Profiles ({calProfiles.length})</span>
               <span className={`transform transition-transform ${showProfiles ? 'rotate-180' : ''}`}>▾</span>
             </button>
 
             {showProfiles && (
               <div className="mt-1 space-y-1 max-h-48 overflow-y-auto">
-                {calProfiles.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-2">No saved profiles yet</p>
-                ) : calProfiles.map(p => (
-                  <div key={p.id} className="flex items-center gap-1 bg-slate-50 border border-slate-100 rounded px-2 py-1.5">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-slate-700 truncate">{p.name}</p>
-                      <p className="text-[10px] text-slate-400 font-mono">·{p.dot_ms}ms  —{p.dash_ms}ms</p>
+                {calProfiles.length === 0
+                  ? <p className="text-xs text-slate-400 text-center py-2">No saved profiles yet</p>
+                  : calProfiles.map(p => (
+                    <div key={p.id} className="flex items-center gap-1 bg-slate-50 border border-slate-100 rounded px-2 py-1.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-700 truncate">{p.name}</p>
+                        <p className="text-[10px] text-slate-400 font-mono">·{Math.round(p.dot_ms)}ms  —{Math.round(p.dash_ms)}ms</p>
+                      </div>
+                      <button onClick={() => handleLoadProfile(p.id, p.name)}
+                        className="text-[10px] bg-teal-600 hover:bg-teal-700 text-white px-1.5 py-0.5 rounded font-medium flex-shrink-0">Load</button>
+                      <button onClick={() => handleDeleteProfile(p.id, p.name)}
+                        className="text-[10px] bg-rose-100 hover:bg-rose-200 text-rose-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0">×</button>
                     </div>
-                    <button
-                      onClick={() => handleLoadProfile(p.id, p.name)}
-                      className="text-[10px] bg-teal-600 hover:bg-teal-700 text-white px-1.5 py-0.5 rounded font-medium flex-shrink-0"
-                    >
-                      Load
-                    </button>
-                    <button
-                      onClick={() => handleDeleteProfile(p.id, p.name)}
-                      className="text-[10px] bg-rose-100 hover:bg-rose-200 text-rose-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
+                  ))}
               </div>
             )}
           </div>
 
           <hr className="border-slate-100 my-4" />
 
+          {/* Text controls */}
           <div className="mt-auto">
             <h3 className="text-lg font-semibold mb-2 text-slate-800">📝 Text Controls</h3>
-            <button onClick={handleClearText} className="w-full bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 transition-colors p-2 rounded text-sm font-medium mb-2 shadow-sm">Clear Text</button>
+            <button onClick={handleClearText}
+              className="w-full bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 transition-colors p-2 rounded text-sm font-medium shadow-sm">
+              Clear Text
+            </button>
           </div>
         </div>
 
-        {/* MAIN CONTENT AREA */}
+        {/* ── MAIN CONTENT ─────────────────────────────────────────── */}
         <div className="flex-1 flex flex-col overflow-hidden">
 
-          {/* HEADER */}
+          {/* Header */}
           <header className="flex items-center justify-between p-6 bg-white/80 backdrop-blur-md border-b border-slate-200 z-10">
             <div className="flex items-center gap-4">
               <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-teal-400 to-cyan-500 rounded-xl shadow-md shadow-teal-500/20 text-white">
@@ -633,49 +795,34 @@ function App() {
                 <p className="text-xs text-teal-600 tracking-widest uppercase font-bold">Assistive Communication</p>
               </div>
             </div>
-
             <div className="flex items-center gap-3 text-sm">
               <span className="px-3 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded-full font-medium">
                 Signed in as <span className="font-mono">{currentUser.username}</span>
               </span>
-              <button
-                onClick={handleSignOut}
-                className="px-3 py-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-full font-medium transition-colors"
-              >
+              <button onClick={handleSignOut}
+                className="px-3 py-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-full font-medium transition-colors">
                 Sign out
               </button>
             </div>
           </header>
 
-          {/* SCROLLABLE DASHBOARD CONTENT */}
+          {/* Dashboard */}
           <div className="p-8 overflow-y-auto">
-
             <div className="grid grid-cols-12 gap-6 mb-8">
 
-              {/* KOLOM 1: Live Video */}
+              {/* Live Video */}
               <div className="col-span-5 bg-white border border-slate-200 p-5 rounded-2xl shadow-sm">
                 <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800">
                   <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
                   Live Video
-                  <button
-                    onClick={() => setFocusMode(true)}
+                  <button onClick={() => setFocusMode(true)}
                     className="ml-auto text-xs bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-1 rounded-full font-medium text-slate-700 transition-colors"
-                    title="Expand video to fill the window"
-                  >
-                    ⛶ Focus Mode
-                  </button>
+                    title="Expand video to fill the window">⛶ Focus Mode</button>
                 </h3>
-
                 <div className="w-full h-64 bg-slate-900 rounded-xl flex items-center justify-center mb-5 border border-slate-200 overflow-hidden relative shadow-inner">
                   <div className="absolute inset-0 border-2 border-teal-500/30 rounded-xl m-4 pointer-events-none z-10"></div>
-
-                  <img
-                    src={`${API_BASE}/video_feed`}
-                    alt="Webcam Stream"
-                    className="w-full h-full object-cover"
-                  />
+                  <img src={`${API_BASE}/video_feed`} alt="Webcam Stream" className="w-full h-full object-cover" />
                 </div>
-
                 <div className="grid grid-cols-3 gap-3">
                   <button onClick={handleCameraStart} className="bg-teal-600 hover:bg-teal-700 text-white transition-colors p-2 rounded-lg font-medium shadow-sm">▶ Start</button>
                   <button onClick={handleCameraStop} className="bg-rose-500 hover:bg-rose-600 text-white transition-colors p-2 rounded-lg font-medium shadow-sm">⏹ Stop</button>
@@ -683,13 +830,13 @@ function App() {
                 </div>
               </div>
 
-              {/* KOLOM 2: Status */}
+              {/* Status */}
               <div className="col-span-3 bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col justify-between">
                 <div>
                   <h3 className="text-lg font-bold mb-5 text-slate-800">📊 Status</h3>
                   <div className="mb-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
                     <p className="text-xs text-slate-500 uppercase tracking-wider mb-1 font-semibold">Eye State</p>
-                    <p className="text-2xl font-mono text-teal-700 font-bold">{eyeState === "OPEN" ? "👁️ " : "😑 "} {eyeState}</p>
+                    <p className="text-2xl font-mono text-teal-700 font-bold">{eyeState === 'OPEN' ? '👁️ ' : '😑 '}{eyeState}</p>
                   </div>
                   <div className="mb-6 flex gap-4">
                     <div className="flex-1 bg-slate-50 p-4 rounded-xl border border-slate-100">
@@ -704,58 +851,78 @@ function App() {
                 </div>
                 <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
                   <p className="text-xs text-amber-700 uppercase tracking-wider mb-1 font-bold">Current Morse</p>
-                  <p className="text-3xl font-bold text-amber-600 tracking-[0.3em]">{currentMorse || "..."}</p>
+                  <p className="text-3xl font-bold text-amber-600 tracking-[0.3em]">{currentMorse || '...'}</p>
                 </div>
               </div>
 
-              {/* KOLOM 3: Text Output */}
+              {/* Text Output */}
               <div className="col-span-4 space-y-4 flex flex-col">
-                <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex-1 flex flex-col">
+
+                {/* Raw decoded — streaming, shows everything */}
+                <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col" style={{ minHeight: '10rem' }}>
                   <h3 className="text-sm font-bold text-slate-600 uppercase tracking-wider mb-3 flex justify-between items-center">
                     Raw Decoded
                     <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 border border-slate-200">CER: 3.6%</span>
                   </h3>
                   <p className="text-xl font-mono text-slate-700 leading-relaxed bg-slate-50 p-4 rounded-xl flex-1 border border-slate-100 shadow-inner">
-                    {decodedText || <span className="text-slate-400 italic">Waiting for input...</span>}
+                    {decodedText || <span className="text-slate-400 italic">Waiting for input…</span>}
                   </p>
                 </div>
-                <div className="bg-gradient-to-br from-teal-50 to-cyan-50 border border-teal-100 p-5 rounded-2xl shadow-sm flex-1 flex flex-col relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-teal-200/30 rounded-full blur-3xl"></div>
+
+                {/* NLP corrected — immutable sentence history with 3 suggestions */}
+                <div className="bg-gradient-to-br from-teal-50 to-cyan-50 border border-teal-100 p-5 rounded-2xl shadow-sm flex flex-col relative overflow-hidden" style={{ minHeight: '10rem' }}>
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-teal-200/30 rounded-full blur-3xl pointer-events-none"></div>
                   <h3 className="text-sm font-bold text-teal-800 uppercase tracking-wider mb-3 flex justify-between items-center relative z-10">
-                    NLP Corrected
+                    NLP Corrected History
                     <span className="text-xs bg-white/60 px-2 py-1 rounded text-teal-700 border border-teal-200 shadow-sm">IndoBERT</span>
                   </h3>
-                  <p className="text-2xl font-semibold text-teal-900 leading-relaxed relative z-10">
-                    {nlpText || <span className="text-teal-600/50 italic">No output yet</span>}
-                  </p>
+                  <div className="flex-1 overflow-y-auto space-y-3 relative z-10">
+                    {nlpSentences.length === 0
+                      ? <p className="text-teal-600/50 italic text-sm">Completed sentences will appear here…</p>
+                      : nlpSentences.map((sent, i) => (
+                        <div key={i} className="bg-white/70 border border-teal-100 rounded-xl p-3 shadow-sm">
+                          <p className="text-[10px] text-teal-600 uppercase font-bold tracking-wider mb-2">
+                            Sentence {i + 1}
+                            <span className="ml-2 text-slate-400 normal-case font-normal">"{sent.raw}"</span>
+                          </p>
+                          <div className="space-y-1.5">
+                            {sent.suggestions.map((s, j) => (
+                              <button key={j}
+                                onClick={() => setSelectedSuggestions(prev => ({ ...prev, [i]: j }))}
+                                className={`w-full text-left text-sm px-3 py-2 rounded-lg transition-colors border ${
+                                  (selectedSuggestions[i] ?? 0) === j
+                                    ? 'bg-teal-600 text-white border-teal-600 font-semibold'
+                                    : 'bg-white text-slate-700 border-slate-200 hover:border-teal-300 hover:bg-teal-50'
+                                }`}>
+                                <span className="text-[10px] mr-1.5 opacity-60">{j === 0 ? '★' : `${j + 1}.`}</span>
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
                 </div>
-              </div>
 
+              </div>
             </div>
 
-            {/* BOTTOM ROW: Calibration Status */}
+            {/* Calibration status bar */}
             <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm flex items-center gap-3">
-              <span className="flex h-3 w-3 relative">
+              <span className="flex h-3 w-3 relative flex-shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
               </span>
               <p className="text-slate-600 font-mono text-sm tracking-wide font-medium">{calStatus}</p>
             </div>
 
-            {/* MORSE REFERENCE REVEAL */}
+            {/* Morse reference */}
             <div className="mt-4">
-              <button
-                onClick={() => setShowMorseRef((v) => !v)}
-                aria-expanded={showMorseRef}
-                className="w-full bg-white border border-slate-200 hover:bg-slate-50 transition-colors p-3 rounded-xl shadow-sm flex items-center justify-between text-slate-700 font-medium"
-              >
-                <span className="flex items-center gap-2">
-                  <span className="text-amber-600">·−</span>
-                  Morse Code Reference
-                </span>
+              <button onClick={() => setShowMorseRef(v => !v)} aria-expanded={showMorseRef}
+                className="w-full bg-white border border-slate-200 hover:bg-slate-50 transition-colors p-3 rounded-xl shadow-sm flex items-center justify-between text-slate-700 font-medium">
+                <span className="flex items-center gap-2"><span className="text-amber-600">·−</span>Morse Code Reference</span>
                 <span className={`transform transition-transform ${showMorseRef ? 'rotate-180' : ''}`}>▾</span>
               </button>
-
               {showMorseRef && (
                 <div className="mt-3 bg-white border border-slate-200 rounded-xl shadow-sm p-5 space-y-5">
                   {Object.entries(MORSE_REFERENCE).map(([group, items]) => (
@@ -763,10 +930,7 @@ function App() {
                       <h4 className="text-xs uppercase tracking-wider font-bold text-slate-500 mb-2">{group}</h4>
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
                         {items.map(([char, code]) => (
-                          <div
-                            key={char}
-                            className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-lg px-3 py-2"
-                          >
+                          <div key={char} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
                             <span className="font-mono font-bold text-slate-800">{char}</span>
                             <span className="font-mono text-amber-600 tracking-widest">{code}</span>
                           </div>
@@ -777,49 +941,39 @@ function App() {
                 </div>
               )}
             </div>
-
           </div>
         </div>
       </div>
 
-      {/* FOCUS MODE OVERLAY */}
-      {/* Rendered alongside (not instead of) the dashboard so the dashboard
-          <img> stays mounted — preventing an MJPEG reconnect on toggle. The
-          overlay uses a separate <img> hitting the same stream. */}
+      {/* Focus Mode Overlay */}
       {focusMode && (
         <div className="fixed inset-0 z-50 bg-black">
-          <img
-            src={`${API_BASE}/video_feed`}
-            alt="Webcam Stream (Focus)"
-            className="absolute inset-0 w-full h-full object-cover"
-          />
-
+          <img src={`${API_BASE}/video_feed`} alt="Webcam Stream (Focus)" className="absolute inset-0 w-full h-full object-cover" />
           <div className="absolute top-4 right-4 z-10 flex gap-2">
-            <button
-              onClick={goFullscreen}
-              className="bg-white/10 hover:bg-white/20 backdrop-blur text-white text-sm px-3 py-2 rounded-lg border border-white/20 transition-colors"
-            >
-              ⛶ Go Fullscreen
-            </button>
-            <button
-              onClick={() => setFocusMode(false)}
-              className="bg-white/10 hover:bg-white/20 backdrop-blur text-white text-sm px-3 py-2 rounded-lg border border-white/20 transition-colors"
-            >
-              ✕ Exit Focus
-            </button>
+            <button onClick={goFullscreen} className="bg-white/10 hover:bg-white/20 backdrop-blur text-white text-sm px-3 py-2 rounded-lg border border-white/20 transition-colors">⛶ Go Fullscreen</button>
+            <button onClick={() => setFocusMode(false)} className="bg-white/10 hover:bg-white/20 backdrop-blur text-white text-sm px-3 py-2 rounded-lg border border-white/20 transition-colors">✕ Exit Focus</button>
           </div>
-
           <div className="absolute bottom-0 inset-x-0 bg-black/70 backdrop-blur-sm text-white py-5 px-6 flex flex-col items-center gap-2 z-10">
-            <p className="text-amber-400 tracking-[0.4em] text-3xl font-mono font-bold min-h-[1em]">
-              {currentMorse || '·'}
-            </p>
+            <p className="text-amber-400 tracking-[0.4em] text-3xl font-mono font-bold min-h-[1em]">{currentMorse || '·'}</p>
             <p className="text-xl font-mono text-center max-w-3xl break-words">
-              {decodedText
-                ? decodedText.slice(-40)
-                : <span className="text-white/40 italic">Waiting for input…</span>}
+              {decodedText ? decodedText.slice(-40) : <span className="text-white/40 italic">Waiting for input…</span>}
             </p>
           </div>
         </div>
+      )}
+
+      {/* Calibration Modal */}
+      {showCalModal && (
+        <CalibrationModal
+          onClose={() => setShowCalModal(false)}
+          onStatusChange={setCalStatus}
+          onCameraStart={handleCameraStart}
+          isCameraRunning={isCameraRunning}
+          isCalibrating={isCalibrating}
+          calProgress={calProgress}
+          calData={calData}
+          currentEar={currentEar}
+        />
       )}
     </>
   );
