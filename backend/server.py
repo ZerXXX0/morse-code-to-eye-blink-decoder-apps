@@ -65,30 +65,6 @@ threading.Thread(target=_preload_nlp, daemon=True).start()
 latest_frame = None
 latest_data = {}
 is_camera_running = False
-camera_thread = None
-
-# Persistent camera handle — opened once at startup so camera_loop never
-# blocks waiting for driver initialisation.
-_persistent_cap = None
-_cap_ready = threading.Event()
-
-def _open_persistent_camera():
-    global _persistent_cap
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    if not cap.isOpened():
-        cap.release()
-        cap = cv2.VideoCapture(0)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    _persistent_cap = cap
-    _cap_ready.set()
-    print(f"LOG: Camera pre-opened (isOpened={cap.isOpened()})")
-
-threading.Thread(target=_open_persistent_camera, daemon=True).start()
 
 # Concurrency primitives.
 # db_lock     — serializes sqlite writes across the camera thread and request handlers.
@@ -216,41 +192,43 @@ def _require_user_id(request: Request) -> int:
     except ValueError:
         raise HTTPException(status_code=400, detail="invalid X-User-Id")
 
-def camera_loop():
-    """Background thread untuk menangkap kamera dan menjalankan AI."""
-    global latest_frame, latest_data, is_camera_running
+def camera_worker():
+    """Single long-lived thread. Opens the camera once at startup, then
+    processes frames while is_camera_running is True and idles otherwise.
+    This eliminates per-start driver initialisation delay entirely."""
+    global latest_frame, latest_data, _ear_collect_mode, _ear_samples
     import time as _time
 
-    # Use the pre-opened persistent handle; wait up to 8 s for it to be ready
-    # (covers the case where the user clicks Start very quickly after launch).
-    _cap_ready.wait(timeout=8.0)
-    cap = _persistent_cap
-
-    # Fall back to a fresh open if the persistent one failed.
-    _owned_cap = False
-    if cap is None or not cap.isOpened():
-        print("LOG: Persistent camera not ready — opening fresh")
-        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    # Open the camera once — this is the only time VideoCapture is constructed.
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    if not cap.isOpened():
+        cap.release()
+        cap = cv2.VideoCapture(0)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        _owned_cap = True
+    print(f"LOG: Camera opened (isOpened={cap.isOpened()})")
 
-    print("LOG: Camera loop started")
+    target_interval = 1.0 / config.target_fps
 
-    target_interval = 1.0 / config.target_fps  # enforce target_fps cap
+    while True:  # run for the lifetime of the server process
+        if not is_camera_running:
+            latest_frame = None
+            _time.sleep(0.05)  # idle at ~20 Hz while stopped
+            continue
 
-    while is_camera_running:
         frame_start = _time.monotonic()
 
         ret, frame = cap.read()
         if not ret:
-            print("LOG: Failed to grab frame")
-            break
+            _time.sleep(0.05)
+            continue
 
-        frame = cv2.flip(frame, 1) # Mirror effect
+        frame = cv2.flip(frame, 1)
 
-        # Proses frame ke AI
         annotated_frame, results = system.process_frame(frame, enable_detection=True)
 
         # EAR baseline collection for calibration
@@ -262,7 +240,6 @@ def camera_loop():
                     _ear_collect_mode = None
                     _ear_done_event.set()
 
-        # Simpan metrik untuk dikirim via WebSocket
         cal = system.calibration_manager.get_calibration()
         latest_data = {
             "eyeState": results['eye_state'].value.upper(),
@@ -280,41 +257,30 @@ def camera_loop():
             "ear": round(ear_val, 4),
             "nlpSentences": system.nlp_manager.get_structured_sentences(),
         }
-        
-        # Encode gambar ke JPG untuk dikirim via MJPEG Stream
+
         _, buffer = cv2.imencode('.jpg', annotated_frame)
         latest_frame = buffer.tobytes()
 
-        # Throttle to target_fps — sleep only if we finished early.
         elapsed = _time.monotonic() - frame_start
         if elapsed < target_interval:
             _time.sleep(target_interval - elapsed)
 
-    # Only release if we opened a fallback cap — the persistent one stays open
-    # so the next Start call returns immediately without driver re-init.
-    if _owned_cap:
-        cap.release()
-        print("LOG: Fallback camera released")
-    latest_frame = None
-    print("LOG: Camera loop stopped")
+
+# Start the worker once at module load — it idles until is_camera_running is set.
+threading.Thread(target=camera_worker, daemon=True).start()
 
 # --- ENDPOINT KONTROL KAMERA ---
 
 @app.post("/api/camera/start")
 async def start_camera_api():
-    global is_camera_running, camera_thread
-    if not is_camera_running:
-        is_camera_running = True
-        camera_thread = threading.Thread(target=camera_loop, daemon=True)
-        camera_thread.start()
-        return {"status": "camera started"}
-    return {"status": "camera already running"}
+    global is_camera_running
+    is_camera_running = True
+    return {"status": "camera started"}
 
 @app.post("/api/camera/stop")
 async def stop_camera_api():
-    global is_camera_running, latest_frame
+    global is_camera_running
     is_camera_running = False
-    latest_frame = None 
     return {"status": "camera stopped"}
 
 @app.post("/api/camera/reset")

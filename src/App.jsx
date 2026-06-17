@@ -831,42 +831,46 @@ function App() {
               </div>
 
               {/* Status */}
-              <div className="col-span-3 bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col justify-between">
-                <div>
-                  <h3 className="text-lg font-bold mb-5 text-slate-800">📊 Status</h3>
-                  <div className="mb-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1 font-semibold">Eye State</p>
-                    <p className="text-2xl font-mono text-teal-700 font-bold">{eyeState === 'OPEN' ? '👁️ ' : '😑 '}{eyeState}</p>
+              <div className="col-span-3 bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col gap-3">
+                <h3 className="text-lg font-bold text-slate-800">📊 Status</h3>
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                  <p className="text-xs text-slate-500 uppercase tracking-wider mb-1 font-semibold">Eye State</p>
+                  <p className="text-2xl font-mono text-teal-700 font-bold">{eyeState === 'OPEN' ? '👁️ ' : '😑 '}{eyeState}</p>
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex-1 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1 font-semibold">Conf</p>
+                    <p className="text-xl font-mono font-bold text-slate-700">{(confidence * 100).toFixed(0)}%</p>
                   </div>
-                  <div className="mb-6 flex gap-4">
-                    <div className="flex-1 bg-slate-50 p-4 rounded-xl border border-slate-100">
-                      <p className="text-xs text-slate-500 uppercase tracking-wider mb-1 font-semibold">Conf</p>
-                      <p className="text-xl font-mono font-bold text-slate-700">{(confidence * 100).toFixed(0)}%</p>
-                    </div>
-                    <div className="flex-1 bg-slate-50 p-4 rounded-xl border border-slate-100">
-                      <p className="text-xs text-slate-500 uppercase tracking-wider mb-1 font-semibold">FPS</p>
-                      <p className="text-xl font-mono font-bold text-slate-700">{fps}</p>
-                    </div>
+                  <div className="flex-1 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1 font-semibold">FPS</p>
+                    <p className="text-xl font-mono font-bold text-slate-700">{fps}</p>
                   </div>
                 </div>
                 <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
                   <p className="text-xs text-amber-700 uppercase tracking-wider mb-1 font-bold">Current Morse</p>
-                  <p className="text-3xl font-bold text-amber-600 tracking-[0.3em]">{currentMorse || '...'}</p>
+                  <p className="text-3xl font-bold text-amber-600 tracking-[0.3em]">{currentMorse || <span className="text-amber-300/50 italic text-lg font-normal">none</span>}</p>
                 </div>
               </div>
 
               {/* Text Output */}
               <div className="col-span-4 space-y-4 flex flex-col">
 
-                {/* Raw decoded — streaming, shows everything */}
+                {/* Raw decoded — current sentence only, cleared when sentence finishes */}
                 <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col" style={{ minHeight: '10rem' }}>
                   <h3 className="text-sm font-bold text-slate-600 uppercase tracking-wider mb-3 flex justify-between items-center">
                     Raw Decoded
                     <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 border border-slate-200">CER: 3.6%</span>
                   </h3>
-                  <p className="text-xl font-mono text-slate-700 leading-relaxed bg-slate-50 p-4 rounded-xl flex-1 border border-slate-100 shadow-inner">
-                    {decodedText || <span className="text-slate-400 italic">Waiting for input…</span>}
-                  </p>
+                  {(() => {
+                    const parts = decodedText.split('\n\n');
+                    const active = decodedText.endsWith('\n\n') ? '' : (parts.at(-1) || '');
+                    return (
+                      <p className="text-xl font-mono text-slate-700 leading-relaxed bg-slate-50 p-4 rounded-xl flex-1 border border-slate-100 shadow-inner">
+                        {active || <span className="text-slate-400 italic">Waiting for input…</span>}
+                      </p>
+                    );
+                  })()}
                 </div>
 
                 {/* NLP corrected — immutable sentence history with 3 suggestions */}
@@ -879,28 +883,48 @@ function App() {
                   <div className="flex-1 overflow-y-auto space-y-3 relative z-10">
                     {nlpSentences.length === 0
                       ? <p className="text-teal-600/50 italic text-sm">Completed sentences will appear here…</p>
-                      : nlpSentences.map((sent, i) => (
-                        <div key={i} className="bg-white/70 border border-teal-100 rounded-xl p-3 shadow-sm">
-                          <p className="text-[10px] text-teal-600 uppercase font-bold tracking-wider mb-2">
-                            Sentence {i + 1}
-                            <span className="ml-2 text-slate-400 normal-case font-normal">"{sent.raw}"</span>
-                          </p>
-                          <div className="space-y-1.5">
-                            {sent.suggestions.map((s, j) => (
-                              <button key={j}
-                                onClick={() => setSelectedSuggestions(prev => ({ ...prev, [i]: j }))}
-                                className={`w-full text-left text-sm px-3 py-2 rounded-lg transition-colors border ${
-                                  (selectedSuggestions[i] ?? 0) === j
-                                    ? 'bg-teal-600 text-white border-teal-600 font-semibold'
-                                    : 'bg-white text-slate-700 border-slate-200 hover:border-teal-300 hover:bg-teal-50'
-                                }`}>
-                                <span className="text-[10px] mr-1.5 opacity-60">{j === 0 ? '★' : `${j + 1}.`}</span>
-                                {s}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
+                      : (() => {
+                          const total = nlpSentences.length;
+                          const visibleCount = Math.min(total, 3);
+                          const hiddenCount = total - visibleCount;
+                          // newest first: take last 3 in reverse order
+                          const visible = nlpSentences.slice(total - visibleCount).reverse();
+                          return (
+                            <>
+                              {visible.map((sent, displayIdx) => {
+                                const origIdx = total - 1 - displayIdx;
+                                return (
+                                  <div key={origIdx} className="bg-white/70 border border-teal-100 rounded-xl p-3 shadow-sm">
+                                    <p className="text-[10px] text-teal-600 uppercase font-bold tracking-wider mb-2">
+                                      Sentence {origIdx + 1}
+                                      <span className="ml-2 text-slate-400 normal-case font-normal">"{sent.raw}"</span>
+                                    </p>
+                                    <div className="space-y-1.5">
+                                      {sent.suggestions.map((s, j) => (
+                                        <button key={j}
+                                          onClick={() => setSelectedSuggestions(prev => ({ ...prev, [origIdx]: j }))}
+                                          className={`w-full text-left text-sm px-3 py-2 rounded-lg transition-colors border ${
+                                            (selectedSuggestions[origIdx] ?? 0) === j
+                                              ? 'bg-teal-600 text-white border-teal-600 font-semibold'
+                                              : 'bg-white text-slate-700 border-slate-200 hover:border-teal-300 hover:bg-teal-50'
+                                          }`}>
+                                          <span className="text-[10px] mr-1.5 opacity-60">{j === 0 ? '★' : `${j + 1}.`}</span>
+                                          {s}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              {hiddenCount > 0 && (
+                                <p className="text-center text-xs text-teal-600/50 py-1">
+                                  … {hiddenCount} older sentence{hiddenCount > 1 ? 's' : ''} not shown
+                                </p>
+                              )}
+                            </>
+                          );
+                        })()
+                    }
                   </div>
                 </div>
 
