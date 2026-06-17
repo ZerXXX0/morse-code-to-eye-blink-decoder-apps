@@ -174,6 +174,15 @@ function App() {
   const [nlpText, setNlpText] = useState("");
   const [calStatus, setCalStatus] = useState("Connecting to Engine...");
 
+  // Calibration result values streamed from the backend
+  const [calData, setCalData] = useState({ isCalibrated: false, dotMs: 0, dashMs: 0, thresholdMs: 0 });
+
+  // Saved calibration profiles from DB
+  const [calProfiles, setCalProfiles] = useState([]);
+  const [showProfiles, setShowProfiles] = useState(false);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [profileBusy, setProfileBusy] = useState(false);
+
   // Pending slider updates — batched + debounced into a single POST. Each
   // movement merges into pendingConfig; a 200ms window of stillness flushes
   // it. Pure React state keeps the react-hooks lint happy (no refs to
@@ -232,6 +241,15 @@ function App() {
             return prev;
           });
         }
+
+        if (data.isCalibrated !== undefined) {
+          setCalData({
+            isCalibrated: data.isCalibrated,
+            dotMs: data.calDotMs ?? 0,
+            dashMs: data.calDashMs ?? 0,
+            thresholdMs: data.calThresholdMs ?? 0,
+          });
+        }
       } catch (error) {
         console.error("Error parsing WebSocket data:", error);
       }
@@ -262,6 +280,16 @@ function App() {
   }, [focusMode]);
 
   // --- AUTH HANDLERS ---
+  const fetchProfiles = async () => {
+    try {
+      const res = await apiFetch('/api/calibrations');
+      const data = await res.json();
+      setCalProfiles(data.profiles || []);
+    } catch (e) {
+      console.error("Failed to fetch calibration profiles", e);
+    }
+  };
+
   const handleLogin = (user) => {
     localStorage.setItem('userId', String(user.id));
     localStorage.setItem('username', user.username);
@@ -271,6 +299,72 @@ function App() {
         ? '✅ Calibration loaded from your account. Ready to type.'
         : 'Welcome! Run Begin Cal. to set your blink thresholds.'
     );
+    // Pre-fetch saved profiles so the panel is ready
+    setTimeout(() => fetchProfiles(), 300);
+  };
+
+  const handleLoadSavedCal = async () => {
+    try {
+      const res = await apiFetch('/api/calibration/load', { method: 'POST' });
+      if (res.ok) {
+        setCalStatus('✅ Saved calibration reloaded.');
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setCalStatus(`❌ ${d.detail || 'No saved calibration found.'}`);
+      }
+    } catch (e) {
+      setCalStatus('❌ Error loading saved calibration.');
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!newProfileName.trim()) return;
+    setProfileBusy(true);
+    try {
+      const res = await apiFetch('/api/calibrations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newProfileName.trim() }),
+      });
+      if (res.ok) {
+        setNewProfileName('');
+        await fetchProfiles();
+        setCalStatus(`✅ Profile "${newProfileName.trim()}" saved.`);
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setCalStatus(`❌ ${d.detail || 'Failed to save profile.'}`);
+      }
+    } catch (e) {
+      setCalStatus('❌ Error saving profile.');
+    } finally {
+      setProfileBusy(false);
+    }
+  };
+
+  const handleLoadProfile = async (profileId, profileName) => {
+    try {
+      const res = await apiFetch(`/api/calibrations/${profileId}/load`, { method: 'POST' });
+      if (res.ok) {
+        setCalStatus(`✅ Profile "${profileName}" loaded.`);
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setCalStatus(`❌ ${d.detail || 'Failed to load profile.'}`);
+      }
+    } catch (e) {
+      setCalStatus('❌ Error loading profile.');
+    }
+  };
+
+  const handleDeleteProfile = async (profileId, profileName) => {
+    try {
+      const res = await apiFetch(`/api/calibrations/${profileId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setCalProfiles(prev => prev.filter(p => p.id !== profileId));
+        setCalStatus(`🗑️ Profile "${profileName}" deleted.`);
+      }
+    } catch (e) {
+      setCalStatus('❌ Error deleting profile.');
+    }
   };
 
   const handleSignOut = () => {
@@ -428,12 +522,93 @@ function App() {
 
           <div className="mb-6">
             <h3 className="text-lg font-semibold mb-2 text-slate-800">🎯 Calibration</h3>
-            <p className="text-xs text-slate-500 mb-4">Required: EAR open/closed, then dot/dash</p>
+            <p className="text-xs text-slate-500 mb-3">Blink short (dots) then long (dashes)</p>
+
+            {/* Run controls */}
             <div className="grid grid-cols-2 gap-2 mb-2">
               <button onClick={handleStartCalibration} className="bg-teal-600 hover:bg-teal-700 text-white transition-colors p-2 rounded text-sm font-medium shadow-sm">Begin Cal.</button>
               <button onClick={handleNextStep} className="bg-slate-200 hover:bg-slate-300 text-slate-700 transition-colors p-2 rounded text-sm font-medium">Next Step</button>
             </div>
-            <button onClick={handleResetCalibration} className="w-full bg-rose-500 hover:bg-rose-600 text-white transition-colors p-2 rounded text-sm font-medium shadow-sm">Reset Cal.</button>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <button onClick={handleResetCalibration} className="bg-rose-500 hover:bg-rosese-600 text-white transition-colors p-2 rounded text-sm font-medium shadow-sm">Reset Cal.</button>
+              <button onClick={handleLoadSavedCal} className="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 transition-colors p-2 rounded text-sm font-medium">Load Saved</button>
+            </div>
+
+            {/* Active calibration values */}
+            {calData.isCalibrated && (
+              <div className="bg-teal-50 border border-teal-100 rounded-lg p-3 mb-3 text-xs space-y-1">
+                <p className="font-semibold text-teal-800 mb-1">Active Calibration</p>
+                <div className="flex justify-between text-teal-700">
+                  <span>· Dot avg</span><span className="font-mono">{calData.dotMs} ms</span>
+                </div>
+                <div className="flex justify-between text-teal-700">
+                  <span>— Dash avg</span><span className="font-mono">{calData.dashMs} ms</span>
+                </div>
+                <div className="flex justify-between text-teal-800 font-semibold border-t border-teal-200 pt-1 mt-1">
+                  <span>Threshold</span><span className="font-mono">{calData.thresholdMs} ms</span>
+                </div>
+              </div>
+            )}
+
+            {/* Save as named profile */}
+            {calData.isCalibrated && (
+              <div className="mb-3">
+                <p className="text-xs text-slate-500 mb-1">Save as profile</p>
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    value={newProfileName}
+                    onChange={(e) => setNewProfileName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveProfile()}
+                    placeholder="Profile name…"
+                    className="flex-1 text-xs p-1.5 border border-slate-200 rounded focus:ring-1 focus:ring-teal-500 focus:outline-none"
+                  />
+                  <button
+                    onClick={handleSaveProfile}
+                    disabled={profileBusy || !newProfileName.trim()}
+                    className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white text-xs px-2 rounded font-medium transition-colors"
+                  >
+                    {profileBusy ? '…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Saved profiles list */}
+            <button
+              onClick={() => { setShowProfiles(v => !v); if (!showProfiles) fetchProfiles(); }}
+              className="w-full flex justify-between items-center text-xs text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded px-3 py-2 font-medium transition-colors"
+            >
+              <span>Saved Profiles ({calProfiles.length})</span>
+              <span className={`transform transition-transform ${showProfiles ? 'rotate-180' : ''}`}>▾</span>
+            </button>
+
+            {showProfiles && (
+              <div className="mt-1 space-y-1 max-h-48 overflow-y-auto">
+                {calProfiles.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-2">No saved profiles yet</p>
+                ) : calProfiles.map(p => (
+                  <div key={p.id} className="flex items-center gap-1 bg-slate-50 border border-slate-100 rounded px-2 py-1.5">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-slate-700 truncate">{p.name}</p>
+                      <p className="text-[10px] text-slate-400 font-mono">·{p.dot_ms}ms  —{p.dash_ms}ms</p>
+                    </div>
+                    <button
+                      onClick={() => handleLoadProfile(p.id, p.name)}
+                      className="text-[10px] bg-teal-600 hover:bg-teal-700 text-white px-1.5 py-0.5 rounded font-medium flex-shrink-0"
+                    >
+                      Load
+                    </button>
+                    <button
+                      onClick={() => handleDeleteProfile(p.id, p.name)}
+                      className="text-[10px] bg-rose-100 hover:bg-rose-200 text-rose-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <hr className="border-slate-100 my-4" />

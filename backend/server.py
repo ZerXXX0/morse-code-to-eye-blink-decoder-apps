@@ -86,6 +86,14 @@ with db_lock:
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
+        CREATE TABLE IF NOT EXISTS calibration_profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            data_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
         """
     )
     db_conn.commit()
@@ -188,6 +196,7 @@ def camera_loop():
         annotated_frame, results = system.process_frame(frame, enable_detection=True)
         
         # Simpan metrik untuk dikirim via WebSocket
+        cal = system.calibration_manager.get_calibration()
         latest_data = {
             "eyeState": results['eye_state'].value.upper(),
             "confidence": results['confidence'],
@@ -196,7 +205,11 @@ def camera_loop():
             "decodedText": results['decoded_text'],
             "nlpText": results.get('nlp_smoothed_text', ''),
             "isCalibrating": results.get('is_calibrating', False),
-            "calProgress": results.get('calibration_progress', ("DONE", 0, 0))
+            "calProgress": results.get('calibration_progress', ("DONE", 0, 0)),
+            "isCalibrated": cal.is_calibrated,
+            "calDotMs": round(cal.avg_dot_duration_ms, 1),
+            "calDashMs": round(cal.avg_dash_duration_ms, 1),
+            "calThresholdMs": round(cal.avg_blink_duration_ms, 1),
         }
         
         # Encode gambar ke JPG untuk dikirim via MJPEG Stream
@@ -402,6 +415,107 @@ async def get_calibration(request: Request):
     if row is None:
         raise HTTPException(status_code=404, detail="no calibration on file")
     return {"data": json.loads(row["data_json"]), "updated_at": row["updated_at"]}
+
+
+@app.post("/api/calibration/load")
+async def load_saved_calibration(request: Request):
+    """Re-apply the auto-saved calibration for the current user (e.g. after a manual reset)."""
+    uid = _require_user_id(request)
+    with db_lock:
+        row = db_conn.execute(
+            "SELECT data_json FROM calibrations WHERE user_id = ?",
+            (uid,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="no calibration on file")
+    cal = deserialize_calibration(row["data_json"])
+    with system_lock:
+        system.apply_calibration(cal)
+    return {"status": "loaded"}
+
+
+# --- CALIBRATION PROFILE ENDPOINTS ---
+
+@app.get("/api/calibrations")
+async def list_calibration_profiles(request: Request):
+    uid = _require_user_id(request)
+    with db_lock:
+        rows = db_conn.execute(
+            "SELECT id, name, data_json, created_at FROM calibration_profiles WHERE user_id = ? ORDER BY created_at DESC",
+            (uid,),
+        ).fetchall()
+    profiles = []
+    for r in rows:
+        d = json.loads(r["data_json"])
+        profiles.append({
+            "id": r["id"],
+            "name": r["name"],
+            "created_at": r["created_at"],
+            "dot_ms": d.get("avg_dot_duration_ms", 0),
+            "dash_ms": d.get("avg_dash_duration_ms", 0),
+            "threshold_ms": d.get("avg_blink_duration_ms", 0),
+        })
+    return {"profiles": profiles}
+
+
+@app.post("/api/calibrations")
+async def save_calibration_profile(request: Request):
+    """Save the currently active calibration as a named profile."""
+    uid = _require_user_id(request)
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name required")
+    cal = system.calibration_manager.get_calibration()
+    if not cal.is_calibrated:
+        raise HTTPException(status_code=400, detail="no active calibration to save")
+    payload = serialize_calibration(cal)
+    with db_lock:
+        cur = db_conn.execute(
+            "INSERT INTO calibration_profiles (user_id, name, data_json) VALUES (?, ?, ?)",
+            (uid, name, payload),
+        )
+        db_conn.commit()
+        profile_id = cur.lastrowid
+    d = json.loads(payload)
+    return {
+        "id": profile_id,
+        "name": name,
+        "dot_ms": d["avg_dot_duration_ms"],
+        "dash_ms": d["avg_dash_duration_ms"],
+        "threshold_ms": d["avg_blink_duration_ms"],
+    }
+
+
+@app.post("/api/calibrations/{profile_id}/load")
+async def load_calibration_profile(profile_id: int, request: Request):
+    """Load a named calibration profile into the active system."""
+    uid = _require_user_id(request)
+    with db_lock:
+        row = db_conn.execute(
+            "SELECT data_json, name FROM calibration_profiles WHERE id = ? AND user_id = ?",
+            (profile_id, uid),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="profile not found")
+    cal = deserialize_calibration(row["data_json"])
+    with system_lock:
+        system.apply_calibration(cal)
+    return {"status": "loaded", "name": row["name"]}
+
+
+@app.delete("/api/calibrations/{profile_id}")
+async def delete_calibration_profile(profile_id: int, request: Request):
+    uid = _require_user_id(request)
+    with db_lock:
+        result = db_conn.execute(
+            "DELETE FROM calibration_profiles WHERE id = ? AND user_id = ?",
+            (profile_id, uid),
+        )
+        db_conn.commit()
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="profile not found")
+    return {"status": "deleted"}
 
 
 if __name__ == "__main__":
