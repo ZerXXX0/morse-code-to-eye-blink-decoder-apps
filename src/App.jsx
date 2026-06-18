@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import blinklinkLogo from './assets/blinklink_logo.png';
+import blingblinkLogo from './assets/blingblink_logo.png';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -69,8 +69,8 @@ function Login({ onLogin }) {
     <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 font-sans transition-colors duration-300">
       <form onSubmit={submit} className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-md p-8 space-y-5">
         <div className="text-center">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-teal-400 to-cyan-500 rounded-xl shadow-md shadow-teal-500/20 text-white text-3xl mb-3">👁️</div>
-          <h1 className="text-2xl font-extrabold text-slate-800 dark:text-slate-100">BlinkLink</h1>
+          <img src={blingblinkLogo} alt="BlingBlink Logo" className="w-14 h-14 rounded-xl shadow-md shadow-teal-500/20 object-cover mx-auto mb-3" />
+          <h1 className="text-2xl font-extrabold text-slate-800 dark:text-slate-100">BlingBlink</h1>
           <p className="text-xs text-teal-600 dark:text-teal-400 tracking-widest uppercase font-bold mt-1">
             {mode === 'login' ? 'Sign in to continue' : 'Create your account'}
           </p>
@@ -441,7 +441,7 @@ function App() {
   });
 
   useEffect(() => {
-    console.log('BlinkLink Theme changed to:', theme);
+    console.log('BlingBlink Theme changed to:', theme);
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
       document.body.classList.add('dark');
@@ -807,9 +807,9 @@ function App() {
           {/* Header */}
           <header className="flex items-center justify-between p-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10 transition-colors duration-300">
             <div className="flex items-center gap-4">
-              <img src={blinklinkLogo} alt="BlinkLink Logo" className="w-12 h-12 rounded-xl shadow-md shadow-teal-500/20 object-cover" />
+              <img src={blingblinkLogo} alt="BlingBlink Logo" className="w-12 h-12 rounded-xl shadow-md shadow-teal-500/20 object-cover" />
               <div>
-                <h1 className="text-3xl font-extrabold text-slate-800 dark:text-slate-100">BlinkLink</h1>
+                <h1 className="text-3xl font-extrabold text-slate-800 dark:text-slate-100">BlingBlink</h1>
                 <p className="text-xs text-teal-600 dark:text-teal-400 tracking-widest uppercase font-bold">Assistive Communication</p>
               </div>
             </div>
